@@ -69,6 +69,19 @@ function handleScanSubmit(rawValue) {
     return;
   }
 
+  // Cek dulu apakah teks ini persis salah satu kode rak yang sudah pernah diassign
+  const rakUpper = raw.toUpperCase();
+  const raksInUse = new Set(allBarang.filter((b) => b.lokasi_rak).map((b) => b.lokasi_rak.toUpperCase()));
+  if (raksInUse.has(rakUpper)) {
+    scanMatches = allBarang.filter((b) => b.lokasi_rak && b.lokasi_rak.toUpperCase() === rakUpper);
+    currentQuery = '';
+    document.querySelectorAll('.filter-pill').forEach((b) => b.classList.remove('active'));
+    document.getElementById('searchInput').value = '';
+    showToast(`Menampilkan barang di rak ${raw.toUpperCase()}`, 'success');
+    renderList();
+    return;
+  }
+
   const matches = allBarang.filter((b) => b.part_number && raw.includes(b.part_number));
   if (matches.length === 1) {
     document.getElementById('searchInput').value = '';
