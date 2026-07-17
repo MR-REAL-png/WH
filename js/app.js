@@ -91,39 +91,72 @@ function escapeHtml(str) {
 
 /**
  * Global scan capture — biar scanner fisik Zebra bisa dipakai TANPA perlu
- * tap ke field dulu. Cara kerja: scanner "mengetik" jauh lebih cepat dari
- * manusia dan diakhiri Enter. Kalau lagi TIDAK ada field yang fokus (form
- * input/textarea), kita tampung karakter yang masuk cepat berurutan, dan
- * begitu Enter datang, itu dianggap hasil scan lalu diteruskan ke callback.
+ * tap ke field dulu.
  *
- * Kalau ada field yang sedang fokus (user sengaja tap dulu), listener ini
- * TIDAK ikut campur — biar behavior field itu sendiri (kayak live search
- * atau kode rak) tetap jalan seperti biasa, tidak dobel-proses.
+ * Kenapa gak cukup dengerin keydown di document: Android (DataWedge)
+ * biasanya nyuntik hasil scan lewat mekanisme "IME text commit" ke field
+ * yang sedang FOKUS — bukan event keyboard biasa. Kalau gak ada field yang
+ * fokus, hasil scan gak ketangkep sama sekali.
+ *
+ * Solusinya: bikin 1 input tersembunyi (di luar layar, gak kelihatan) yang
+ * SELALU otomatis fokus setiap kali user lagi tidak sengaja mengetik di
+ * field lain. Field asli (search box, kode rak, dst) tetap bisa dipakai
+ * normal — begitu user tap ke situ, field tersembunyi ini "mengalah" dan
+ * gak ganggu. Begitu user tap keluar lagi / gak ngapa-ngapain, fokus balik
+ * otomatis ke field tersembunyi, siap nangkep scan kapan saja.
+ *
+ * Hasil scan langsung dikosongkan dari field tersembunyi SEBELUM diteruskan
+ * ke callback, jadi scan berikutnya tidak menumpuk/tercampur.
  */
 function initGlobalScanCapture(onScanComplete) {
-  let buffer = '';
-  let lastTime = 0;
-  const FAST_GAP_MS = 60; // jeda antar-karakter scanner jauh lebih cepat dari ngetik manusia
+  const hidden = document.createElement('input');
+  hidden.type = 'text';
+  hidden.setAttribute('autocomplete', 'off');
+  hidden.setAttribute('aria-hidden', 'true');
+  hidden.tabIndex = -1;
+  Object.assign(hidden.style, {
+    position: 'fixed',
+    top: '-1000px',
+    left: '-1000px',
+    width: '1px',
+    height: '1px',
+    opacity: '0',
+    pointerEvents: 'none',
+  });
+  document.body.appendChild(hidden);
 
-  document.addEventListener('keydown', (e) => {
-    const active = document.activeElement;
-    const isFormField = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
-    if (isFormField) return; // biarkan field itu sendiri yang handle
+  const isRealField = (el) => el && el !== hidden && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
 
-    const now = Date.now();
+  const refocusIfIdle = () => {
+    if (!isRealField(document.activeElement)) {
+      hidden.focus({ preventScroll: true });
+    }
+  };
+
+  refocusIfIdle();
+  document.addEventListener('focusout', () => setTimeout(refocusIfIdle, 30));
+  document.addEventListener('click', (e) => {
+    if (!isRealField(e.target)) setTimeout(refocusIfIdle, 30);
+  });
+
+  const submitScan = () => {
+    const scanned = hidden.value;
+    hidden.value = ''; // dikosongkan LEBIH DULU, sebelum diproses — biar tidak numpuk
+    if (scanned.trim()) onScanComplete(scanned);
+  };
+
+  hidden.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      if (buffer.length > 0) {
-        e.preventDefault();
-        const scanned = buffer;
-        buffer = '';
-        onScanComplete(scanned);
-      }
-      return;
+      e.preventDefault();
+      submitScan();
     }
-    if (e.key.length === 1) {
-      if (now - lastTime > FAST_GAP_MS) buffer = ''; // jeda kelamaan, bukan hasil scan
-      buffer += e.key;
-      lastTime = now;
-    }
+  });
+
+  // Jaga-jaga kalau device tidak selalu mengirim Enter di akhir scan —
+  // auto-submit setelah jeda singkat tanpa ketikan baru.
+  let idleTimer = null;
+  hidden.addEventListener('input', () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(submitScan, 400);
   });
 }
