@@ -13,6 +13,7 @@ const COLUMN_ALIASES = {
   satuan: ['satuan', 'unit', 'uom'],
   storage_location: ['storage loacation', 'storage location', 'storage_location', 'lokasi', 'plant', 'gudang'],
   qty: ['qty', 'quantity', 'stok', 'stock', 'jumlah', 'stok qty'],
+  lokasi_rak: ['lokasi rak', 'lokasi_rak', 'rak', 'kode rak', 'rack location', 'rack'],
 };
 
 function normalizeHeader(h) {
@@ -44,12 +45,16 @@ function mapRowToLocationRow(row, headerMap) {
   const storageLocRaw = get('storage_location');
   const storageLoc = storageLocRaw !== undefined ? String(storageLocRaw).trim() : '';
 
+  const lokasiRakRaw = get('lokasi_rak');
+  const lokasiRak = lokasiRakRaw !== undefined ? String(lokasiRakRaw).trim().toUpperCase() : '';
+
   return {
     sku: String(partNumber).trim(),
     part_number: String(partNumber).trim(),
     nama_barang: String(nama).trim(),
     satuan: get('satuan') ? String(get('satuan')).trim() : '',
     storage_location: storageLoc,
+    lokasi_rak: lokasiRak,
     qty,
   };
 }
@@ -66,6 +71,7 @@ function groupRowsBySku(locationRows) {
         satuan: row.satuan,
         stok: {},
         tanggal_kedatangan: '',
+        lokasi_rak: '',
       };
     }
     const g = groups[row.sku];
@@ -75,6 +81,7 @@ function groupRowsBySku(locationRows) {
     }
     if (!g.nama_barang) g.nama_barang = row.nama_barang;
     if (!g.satuan) g.satuan = row.satuan;
+    if (!g.lokasi_rak && row.lokasi_rak) g.lokasi_rak = row.lokasi_rak;
   }
   return Object.values(groups);
 }
