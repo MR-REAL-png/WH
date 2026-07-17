@@ -88,3 +88,42 @@ function escapeHtml(str) {
   div.textContent = str ?? '';
   return div.innerHTML;
 }
+
+/**
+ * Global scan capture — biar scanner fisik Zebra bisa dipakai TANPA perlu
+ * tap ke field dulu. Cara kerja: scanner "mengetik" jauh lebih cepat dari
+ * manusia dan diakhiri Enter. Kalau lagi TIDAK ada field yang fokus (form
+ * input/textarea), kita tampung karakter yang masuk cepat berurutan, dan
+ * begitu Enter datang, itu dianggap hasil scan lalu diteruskan ke callback.
+ *
+ * Kalau ada field yang sedang fokus (user sengaja tap dulu), listener ini
+ * TIDAK ikut campur — biar behavior field itu sendiri (kayak live search
+ * atau kode rak) tetap jalan seperti biasa, tidak dobel-proses.
+ */
+function initGlobalScanCapture(onScanComplete) {
+  let buffer = '';
+  let lastTime = 0;
+  const FAST_GAP_MS = 60; // jeda antar-karakter scanner jauh lebih cepat dari ngetik manusia
+
+  document.addEventListener('keydown', (e) => {
+    const active = document.activeElement;
+    const isFormField = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+    if (isFormField) return; // biarkan field itu sendiri yang handle
+
+    const now = Date.now();
+    if (e.key === 'Enter') {
+      if (buffer.length > 0) {
+        e.preventDefault();
+        const scanned = buffer;
+        buffer = '';
+        onScanComplete(scanned);
+      }
+      return;
+    }
+    if (e.key.length === 1) {
+      if (now - lastTime > FAST_GAP_MS) buffer = ''; // jeda kelamaan, bukan hasil scan
+      buffer += e.key;
+      lastTime = now;
+    }
+  });
+}
