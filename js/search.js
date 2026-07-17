@@ -36,6 +36,8 @@ async function initBeranda() {
 
   document.getElementById('sheetBackdrop').addEventListener('click', closeDetail);
 
+  initGlobalScanCapture(handleScanSubmit);
+
   await loadData();
 }
 
