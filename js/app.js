@@ -113,6 +113,7 @@ function initGlobalScanCapture(onScanComplete) {
   hidden.type = 'text';
   hidden.setAttribute('autocomplete', 'off');
   hidden.setAttribute('aria-hidden', 'true');
+  hidden.setAttribute('inputmode', 'none'); // cegah keyboard virtual muncul walau fokus programatik
   hidden.tabIndex = -1;
   Object.assign(hidden.style, {
     position: 'fixed',
