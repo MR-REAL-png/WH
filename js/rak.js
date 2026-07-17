@@ -30,6 +30,11 @@ async function initRakPage() {
   document.getElementById('addToRakBtn').addEventListener('click', openAssignSheet);
   document.getElementById('assignSearchInput').addEventListener('input', (e) => renderAssignResults(e.target.value));
 
+  initGlobalScanCapture((scanned) => {
+    rakInput.value = scanned.trim().toUpperCase();
+    loadRak(scanned.trim());
+  });
+
   // Kalau dibuka dari index.html dengan ?assign=SKU, langsung buka sheet setelah user tentukan rak
   const params = new URLSearchParams(location.search);
   assignTargetSku = params.get('assign');
