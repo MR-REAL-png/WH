@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Gudang — Cari Barang</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1B5FA8">
+</head>
+<body>
+
+<header class="topbar">
+  <span class="topbar__eyebrow">Gudang · Pencarian</span>
+  <h1 class="topbar__title">Cari Barang</h1>
+  <div class="topbar__meta" id="syncMeta">
+    <span class="dot"></span>
+    <span>Memuat status sync…</span>
+  </div>
+</header>
+
+<main class="container">
+  <div class="search-bar">
+    <span id="searchIconSlot"></span>
+    <input type="text" id="searchInput" placeholder="Cari nama atau part number…" autocomplete="off" inputmode="search">
+  </div>
+
+  <div class="filters" id="filterPills">
+    <button class="filter-pill active" data-filter="all">Semua</button>
+    <button class="filter-pill" data-filter="1102">Unpack</button>
+    <button class="filter-pill" data-filter="1401">CKD/Import</button>
+    <button class="filter-pill" data-filter="2101">Line Produksi</button>
+    <button class="filter-pill" data-filter="tanpa_lokasi">Belum ada rak</button>
+  </div>
+
+  <div class="item-list" id="itemList"></div>
+
+  <div class="empty-state" id="emptyState" style="display:none;">
+    <div id="emptyIconSlot"></div>
+    <h3 id="emptyTitle">Belum ada data barang</h3>
+    <p id="emptyDesc">Import data dari Excel SAP dulu untuk mulai mencari barang di gudang ini.</p>
+  </div>
+</main>
+
+<!-- Detail sheet -->
+<div class="sheet-backdrop" id="sheetBackdrop"></div>
+<div class="sheet" id="detailSheet">
+  <div class="sheet__handle"></div>
+  <div id="detailContent"></div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/app.js"></script>
+<script src="js/search.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js'));
+  }
+</script>
+</body>
+</html>
