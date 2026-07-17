@@ -4,7 +4,7 @@
    supaya app tetap jalan 100% walau device offline total setelah
    pertama kali dibuka & di-cache.
    ========================================================= */
-const CACHE_NAME = 'gudang-cache-v7';
+const CACHE_NAME = 'gudang-cache-v9';
 
 // App shell inti — WAJIB ke-cache saat install
 const CORE_ASSETS = [
@@ -18,6 +18,7 @@ const CORE_ASSETS = [
   './js/db.js',
   './js/search.js',
   './js/import.js',
+  './js/qr-import.js',
   './js/rak.js',
 ];
 
