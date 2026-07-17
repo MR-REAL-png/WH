@@ -12,16 +12,29 @@ const DB_NAME = 'gudang_db';
 const DB_VERSION = 2;
 
 // Kode storage location SAP -> label & arti fisiknya di gudang
+// (2101 "Line Produksi" sengaja tidak dipakai — barang sudah keluar gudang, tidak relevan dicari)
 const STORAGE_LOCATIONS = {
   '1101': { label: 'Supplier Lokal', short: 'Lokal', badge: 'loc-1101' },
   '1102': { label: 'Unpack', short: 'Unpack', badge: 'loc-1102' },
-  '1401': { label: 'CKD / Import (utuh)', short: 'CKD', badge: 'loc-1401' },
-  '2101': { label: 'Line Produksi', short: 'Line', badge: 'loc-2101' },
+  '1401': { label: 'Highrack', short: 'Highrack', badge: 'loc-1401' },
 };
-const STORAGE_LOCATION_ORDER = ['1101', '1102', '1401', '2101'];
+const STORAGE_LOCATION_ORDER = ['1101', '1102', '1401'];
+
+// Isi QR/barcode yang ditempel di papan zona gudang — scan ini duluan
+// buat filter list ke zona itu sebelum scan barang.
+const ZONE_CODES = {
+  'ZONA:LOKAL': '1101',
+  'ZONA:UNPACK': '1102',
+  'ZONA:HIGHRACK': '1401',
+};
+
+function matchZoneCode(raw) {
+  const norm = String(raw || '').trim().toUpperCase();
+  return ZONE_CODES[norm] || null;
+}
 
 function emptyStok() {
-  return { '1101': 0, '1102': 0, '1401': 0, '2101': 0 };
+  return { '1101': 0, '1102': 0, '1401': 0 };
 }
 
 function openDB() {
@@ -51,6 +64,7 @@ const GudangDB = {
   STORAGE_LOCATIONS,
   STORAGE_LOCATION_ORDER,
   totalStok,
+  matchZoneCode,
 
   async getAllBarang() {
     const db = await openDB();
