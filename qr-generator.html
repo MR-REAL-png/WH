@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gudang — QR Transfer Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root {
+    --bg: #F5F8FA; --surface: #FFFFFF; --primary: #1B5FA8; --primary-dark: #123F73;
+    --border: #DDE5EC; --text: #16202B; --text-muted: #5C6B7A;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p.sub { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+  input[type=file] { width: 100%; padding: 10px; border: 1.5px dashed var(--border); border-radius: 10px; }
+  #qrHolder { display: flex; justify-content: center; padding: 16px; background: #fff; }
+  #qrHolder img, #qrHolder canvas { image-rendering: pixelated; }
+  .progress-label { text-align: center; font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .progress-sub { text-align: center; font-size: 12px; color: var(--text-muted); margin-bottom: 14px; }
+  .controls { display: flex; gap: 8px; margin-top: 14px; }
+  button { flex: 1; padding: 12px; border-radius: 10px; border: none; font-weight: 700; font-size: 14px; cursor: pointer; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-secondary { background: #EEF3F7; color: var(--text); border: 1.5px solid var(--border); }
+  .btn-primary:disabled, .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .jump-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .jump-row input { width: 70px; padding: 8px; border: 1.5px solid var(--border); border-radius: 8px; text-align: center; }
+  .hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-top: 10px; }
+  .batch-id { font-family: monospace; background: #EEF3F7; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>QR Transfer Generator</h1>
+  <p class="sub">Untuk PC yang port USB/Bluetooth-nya dikunci. Upload Excel dari SAP, lalu scan QR yang muncul satu-satu pakai kamera di app Gudang PDA.</p>
+
+  <div class="card" id="uploadCard">
+    <label style="font-size:13px; font-weight:600; display:block; margin-bottom:8px;">Pilih file Excel (.xlsx)</label>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+    <p class="hint" id="statusMsg"></p>
+  </div>
+
+  <div class="card" id="qrCard" style="display:none;">
+    <div class="progress-label" id="progressLabel">Chunk 1 / 1</div>
+    <div class="progress-sub">Batch ID: <span class="batch-id" id="batchIdLabel"></span></div>
+    <div id="qrHolder"></div>
+    <div class="controls">
+      <button class="btn-secondary" id="prevBtn">&larr; Prev</button>
+      <button class="btn-primary" id="nextBtn">Next &rarr;</button>
+    </div>
+    <div class="jump-row">
+      <span style="font-size:13px;">Lompat ke #</span>
+      <input type="number" id="jumpInput" min="1">
+      <button class="btn-secondary" id="jumpBtn" style="flex:0 0 auto; padding:8px 14px;">Go</button>
+    </div>
+    <p class="hint">Tunggu PDA berhasil scan (biasanya ada suara/getar), baru tekan Next. Kalau progress di PDA menunjukkan ada chunk yang kelewat, lompat ke nomor itu pakai kolom di atas.</p>
+  </div>
+</div>
+
+<script>
+const CHUNK_MAX_CHARS = 300;
+let chunks = [];
+let batchId = '';
+let currentIndex = 0;
+let qrRenderer = null;
+
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = new Uint8Array(ev.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const csv = XLSX.utils.sheet_to_csv(sheet);
+      buildChunks(csv);
+    } catch (err) {
+      document.getElementById('statusMsg').textContent = 'Gagal baca file: ' + err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+function buildChunks(csvText) {
+  const lines = csvText.split('\n').filter((l) => l.trim().length > 0);
+  chunks = [];
+  let current = '';
+  for (const line of lines) {
+    const candidate = current ? current + '\n' + line : line;
+    if (candidate.length > CHUNK_MAX_CHARS && current) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) chunks.push(current);
+
+  batchId = Date.now().toString(36).slice(-6).toUpperCase();
+  currentIndex = 0;
+  document.getElementById('batchIdLabel').textContent = batchId;
+  document.getElementById('statusMsg').textContent = `${lines.length} baris data → ${chunks.length} QR code.`;
+  document.getElementById('qrCard').style.display = 'block';
+  document.getElementById('jumpInput').max = chunks.length;
+  renderCurrentChunk();
+}
+
+function renderCurrentChunk() {
+  const total = chunks.length;
+  const payload = `GDG1|${batchId}|${currentIndex}|${total}|${chunks[currentIndex]}`;
+  document.getElementById('progressLabel').textContent = `Chunk ${currentIndex + 1} / ${total}`;
+
+  const holder = document.getElementById('qrHolder');
+  holder.innerHTML = '';
+  new QRCode(holder, {
+    text: payload,
+    width: 280,
+    height: 280,
+    correctLevel: QRCode.CorrectLevel.M,
+  });
+
+  document.getElementById('prevBtn').disabled = currentIndex === 0;
+  document.getElementById('nextBtn').disabled = currentIndex === total - 1;
+}
+
+document.getElementById('prevBtn').addEventListener('click', () => {
+  if (currentIndex > 0) { currentIndex--; renderCurrentChunk(); }
+});
+document.getElementById('nextBtn').addEventListener('click', () => {
+  if (currentIndex < chunks.length - 1) { currentIndex++; renderCurrentChunk(); }
+});
+document.getElementById('jumpBtn').addEventListener('click', () => {
+  const val = parseInt(document.getElementById('jumpInput').value, 10);
+  if (val >= 1 && val <= chunks.length) { currentIndex = val - 1; renderCurrentChunk(); }
+});
+</script>
+</body>
+</html>
