@@ -4,6 +4,7 @@
 let allBarang = [];
 let currentFilter = 'all';
 let currentQuery = '';
+let scanMatches = null; // hasil scan barcode barang yang cocok >1 (perlu dipilih manual)
 
 async function initBeranda() {
   renderBottomNav('beranda');
@@ -12,7 +13,15 @@ async function initBeranda() {
 
   document.getElementById('searchInput').addEventListener('input', (e) => {
     currentQuery = e.target.value;
+    scanMatches = null;
     renderList();
+  });
+
+  document.getElementById('searchInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleScanSubmit(e.target.value);
+    }
   });
 
   document.querySelectorAll('.filter-pill').forEach((btn) => {
@@ -20,6 +29,7 @@ async function initBeranda() {
       document.querySelectorAll('.filter-pill').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       currentFilter = btn.dataset.filter;
+      scanMatches = null;
       renderList();
     });
   });
@@ -27,6 +37,57 @@ async function initBeranda() {
   document.getElementById('sheetBackdrop').addEventListener('click', closeDetail);
 
   await loadData();
+}
+
+/**
+ * Dipanggil saat Enter ditekan di field pencarian — ini yang membedakan
+ * "hasil scan" (scanner Zebra otomatis kirim Enter) dari ngetik manual.
+ * 1. Kalau teksnya cocok kode zona (papan area) -> set filter ke zona itu.
+ * 2. Kalau bukan, coba cocokkan sebagai barcode barang (part number ada
+ *    di DALAM teks scan, bukan sebaliknya, karena barcode fisik biasanya
+ *    "kotor" — ada teks lain selain part number).
+ * 3. Kalau tidak ketemu cocok sama sekali, fallback ke pencarian teks biasa.
+ */
+function handleScanSubmit(rawValue) {
+  const raw = rawValue.trim();
+  if (!raw) return;
+
+  const zoneCode = GudangDB.matchZoneCode(raw);
+  if (zoneCode) {
+    currentFilter = zoneCode;
+    currentQuery = '';
+    scanMatches = null;
+    document.querySelectorAll('.filter-pill').forEach((b) => {
+      b.classList.toggle('active', b.dataset.filter === zoneCode);
+    });
+    document.getElementById('searchInput').value = '';
+    showToast(`Filter aktif: ${GudangDB.STORAGE_LOCATIONS[zoneCode].label}`, 'success');
+    renderList();
+    return;
+  }
+
+  const matches = allBarang.filter((b) => b.part_number && raw.includes(b.part_number));
+  if (matches.length === 1) {
+    document.getElementById('searchInput').value = '';
+    currentQuery = '';
+    scanMatches = null;
+    renderList();
+    openDetail(matches[0].sku);
+    return;
+  }
+  if (matches.length > 1) {
+    scanMatches = matches;
+    document.getElementById('searchInput').value = '';
+    currentQuery = '';
+    showToast(`${matches.length} kemungkinan cocok, pilih salah satu`, 'default');
+    renderList();
+    return;
+  }
+
+  // Tidak ketemu sebagai zona atau barcode barang — perlakukan sebagai teks cari biasa
+  scanMatches = null;
+  currentQuery = raw;
+  renderList();
 }
 
 async function loadData() {
@@ -48,6 +109,8 @@ async function renderSyncMeta() {
 }
 
 function getFilteredSorted() {
+  if (scanMatches) return scanMatches;
+
   let list = allBarang;
 
   if (currentFilter === 'tanpa_lokasi') {
