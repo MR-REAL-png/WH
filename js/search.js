@@ -214,15 +214,18 @@ async function openDetail(sku) {
   const hasLokasi = !!b.lokasi_rak;
   const total = GudangDB.totalStok(b.stok);
 
-  const breakdownRows = GudangDB.STORAGE_LOCATION_ORDER.map((code) => {
-    const loc = GudangDB.STORAGE_LOCATIONS[code];
-    const qty = b.stok?.[code] || 0;
-    return `
+  const nonZeroLocations = GudangDB.STORAGE_LOCATION_ORDER.filter((code) => (b.stok?.[code] || 0) > 0);
+  const breakdownRows = nonZeroLocations.length > 0
+    ? nonZeroLocations.map((code) => {
+        const loc = GudangDB.STORAGE_LOCATIONS[code];
+        const qty = b.stok[code];
+        return `
       <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border);">
         <span class="badge badge--${loc.badge}">${loc.label}</span>
         <b class="mono">${qty.toLocaleString('id-ID')}</b>
       </div>`;
-  }).join('');
+      }).join('')
+    : `<p class="text-muted" style="font-size:13px; padding:14px 4px;">Tidak ada stok di lokasi manapun.</p>`;
 
   document.getElementById('detailContent').innerHTML = `
     <div>
