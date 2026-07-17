@@ -20,17 +20,11 @@ const STORAGE_LOCATIONS = {
 };
 const STORAGE_LOCATION_ORDER = ['1101', '1102', '1401'];
 
-// Isi QR/barcode yang ditempel di papan zona gudang — scan ini duluan
-// buat filter list ke zona itu sebelum scan barang.
-const ZONE_CODES = {
-  'ZONA:LOKAL': '1101',
-  'ZONA:UNPACK': '1102',
-  'ZONA:HIGHRACK': '1401',
-};
-
+// Scan QR/barcode papan zona gudang — isinya cukup kode storage location
+// polos (1101/1102/1401), sama persis dengan kode SAP.
 function matchZoneCode(raw) {
-  const norm = String(raw || '').trim().toUpperCase();
-  return ZONE_CODES[norm] || null;
+  const norm = String(raw || '').trim();
+  return STORAGE_LOCATION_ORDER.includes(norm) ? norm : null;
 }
 
 function emptyStok() {
@@ -123,7 +117,7 @@ const GudangDB = {
         satuan: incomingGroup.satuan || '',
         stok: { ...emptyStok(), ...incomingGroup.stok },
         tanggal_kedatangan: incomingGroup.tanggal_kedatangan || '',
-        lokasi_rak: '',
+        lokasi_rak: incomingGroup.lokasi_rak || '',
         last_synced: now,
         is_new: true,
       };
@@ -140,9 +134,11 @@ const GudangDB = {
       satuan: incomingGroup.satuan || existing.satuan,
       stok: mergedStok,
       tanggal_kedatangan: incomingGroup.tanggal_kedatangan || existing.tanggal_kedatangan || '',
+      // Lokasi rak dari Excel MENIMPA kalau kolomnya terisi. Kalau kosong
+      // di baris Excel, biarkan apa adanya (jangan dikosongkan paksa).
+      lokasi_rak: incomingGroup.lokasi_rak ? incomingGroup.lokasi_rak : existing.lokasi_rak,
       last_synced: now,
       is_new: false,
-      // lokasi_rak sengaja tidak disentuh
     };
   },
 
