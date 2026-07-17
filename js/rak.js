@@ -15,6 +15,7 @@ async function initRakPage() {
   document.getElementById('assignSearchIconSlot').innerHTML = Icons.search;
 
   const rakInput = document.getElementById('rakInput');
+  rakInput.addEventListener('focus', () => rakInput.select());
   rakInput.addEventListener('keyup', (e) => {
     // Scanner biasanya diakhiri Enter setelah suntik teks — trigger langsung
     if (e.key === 'Enter' || rakInput.value.trim().length >= 4) {
