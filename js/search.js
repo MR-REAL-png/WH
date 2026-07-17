@@ -11,6 +11,7 @@ async function initBeranda() {
   document.getElementById('searchIconSlot').innerHTML = Icons.search;
   document.getElementById('emptyIconSlot').innerHTML = Icons.empty;
 
+  document.getElementById('searchInput').addEventListener('focus', (e) => e.target.select());
   document.getElementById('searchInput').addEventListener('input', (e) => {
     currentQuery = e.target.value;
     scanMatches = null;
