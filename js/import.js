@@ -25,9 +25,39 @@ function buildHeaderMap(headers) {
   const map = {};
   for (const [field, aliases] of Object.entries(COLUMN_ALIASES)) {
     const idx = normalized.findIndex((h) => aliases.includes(h));
-    if (idx >= 0) map[field] = headers[idx];
+    if (idx >= 0) map[field] = idx; // simpan INDEX kolom, bukan nama — biar kompatibel dengan baris berbasis array
   }
   return map;
+}
+
+/**
+ * Cari baris header secara otomatis di antara beberapa baris pertama sheet
+ * (posisi header di file SAP kadang row 1, kadang ada baris kosong/judul
+ * di atasnya — jadi tidak bisa diasumsikan selalu row 1).
+ * Mengembalikan { headerMap, dataRows } atau null kalau tidak ketemu.
+ */
+function parseSheetRows(sheet) {
+  const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  const scanLimit = Math.min(raw.length, 15);
+  let headerRowIndex = -1;
+  let headerMap = null;
+
+  for (let i = 0; i < scanLimit; i++) {
+    const candidate = (raw[i] || []).map((c) => String(c ?? ''));
+    const map = buildHeaderMap(candidate);
+    if (map.part_number !== undefined && map.nama_barang !== undefined) {
+      headerRowIndex = i;
+      headerMap = map;
+      break;
+    }
+  }
+  if (headerRowIndex === -1) return null;
+
+  const dataRows = raw
+    .slice(headerRowIndex + 1)
+    .filter((r) => r && r.some((c) => String(c ?? '').trim() !== ''));
+
+  return { headerMap, dataRows };
 }
 
 function mapRowToLocationRow(row, headerMap) {
@@ -121,22 +151,14 @@ async function handleFile(file) {
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data, { type: 'array', cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-    if (rows.length === 0) {
-      showToast('File kosong atau format tidak terbaca', 'error');
-      return;
-    }
-
-    const headers = Object.keys(rows[0]);
-    const headerMap = buildHeaderMap(headers);
-
-    if (!headerMap.part_number || !headerMap.nama_barang) {
+    const parsed = parseSheetRows(sheet);
+    if (!parsed) {
       showToast('Kolom Part Number / Name Part tidak ditemukan di file', 'error');
       return;
     }
 
-    const locationRows = rows.map((r) => mapRowToLocationRow(r, headerMap)).filter(Boolean);
+    const locationRows = parsed.dataRows.map((r) => mapRowToLocationRow(r, parsed.headerMap)).filter(Boolean);
     const grouped = groupRowsBySku(locationRows);
     await buildPreview(grouped);
   } catch (err) {
