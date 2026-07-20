@@ -41,7 +41,7 @@
 <body>
 <div class="wrap">
   <h1>QR Transfer Generator</h1>
-  <p class="sub">Untuk PC yang port USB/Bluetooth-nya dikunci atau upload file diblokir security. Isi data dari SAP di sini (upload file ATAU paste teks), lalu scan QR yang muncul satu-satu pakai kamera di app Gudang PDA.</p>
+  <p class="sub">Untuk PC yang port USB/Bluetooth-nya dikunci atau upload file diblokir security. Isi data dari SAP di sini (upload file ATAU paste teks), lalu scan QR yang muncul satu-satu pakai scanner fisik PDA di app Gudang.</p>
 
   <div class="mode-toggle">
     <button class="mode-btn active" id="modeUploadBtn">Upload File</button>
@@ -82,7 +82,7 @@
 </div>
 
 <script>
-const CHUNK_MAX_CHARS = 500;
+const CHUNK_MAX_CHARS = 180;
 let chunks = [];
 let batchId = '';
 let currentIndex = 0;
@@ -108,10 +108,6 @@ function setMode(mode) {
 }
 
 // ---------- Mode: upload file (via SheetJS) ----------
-// Konversi sheet ke CSV MANUAL (bukan XLSX.utils.sheet_to_csv langsung),
-// karena sheet_to_csv ikut sertakan "used range" penuh yang kadang jauh
-// lebih luas dari data asli (gara-gara formatting kolom/baris kosong di Excel),
-// bikin 1 baris jadi penuh koma kosong sampai ribuan karakter -> QR overflow.
 function sheetToTrimmedCsv(sheet) {
   const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
   const lines = [];
@@ -120,7 +116,7 @@ function sheetToTrimmedCsv(sheet) {
     for (let i = 0; i < row.length; i++) {
       if (String(row[i] ?? '').trim() !== '') lastNonEmpty = i;
     }
-    if (lastNonEmpty === -1) continue; // baris kosong total, buang
+    if (lastNonEmpty === -1) continue;
     lines.push(row.slice(0, lastNonEmpty + 1).map(csvEscape).join(','));
   }
   return lines.join('\n');
@@ -145,9 +141,6 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
 });
 
 // ---------- Mode: paste teks (TSV hasil copy dari Excel) ----------
-// Excel/Google Sheets kalau di-copy hasilnya teks dipisah TAB antar kolom,
-// baris baru antar baris. Ini dikonversi ke format CSV yang sama persis
-// dengan yang dipakai mode upload, supaya lolos pipeline chunking yang sama.
 function tsvToCsv(text) {
   const lines = text.split(/\r\n|\r|\n/);
   const csvLines = [];
@@ -195,7 +188,6 @@ function buildChunks(csvText, statusEl) {
   for (const line of lines) {
     if (byteLength(line) > CHUNK_MAX_CHARS) {
       if (current) { raw.push(current); current = ''; }
-      // Potong per karakter tapi cek ulang byte-nya, biar tidak motong di tengah karakter multi-byte
       let piece = '';
       for (const ch of line) {
         if (byteLength(piece + ch) > CHUNK_MAX_CHARS) {
@@ -240,9 +232,9 @@ function renderCurrentChunk() {
   try {
     new QRCode(holder, {
       text: payload,
-      width: 340,
-      height: 340,
-      correctLevel: QRCode.CorrectLevel.M,
+      width: 460,
+      height: 460,
+      correctLevel: QRCode.CorrectLevel.L,
     });
   } catch (err) {
     holder.innerHTML = `<p style="color:#C0392B; font-size:13px; text-align:center;">Gagal generate QR chunk ini (${err.message}).<br>Panjang: ${payload.length} karakter / ${byteLen} byte.<br><br><b>Isi chunk (untuk debug):</b><br><span style="font-family:monospace; font-size:11px; word-break:break-all;">${payload.slice(0, 400).replace(/</g,'&lt;')}${payload.length > 400 ? '…' : ''}</span></p>`;
