@@ -32,7 +32,7 @@ Draft HANDOFF versi lama sempat menyebut format teks `ZONA:LOKAL` / `ZONA:UNPACK
 - Dibuat sebagai **PWA** (manifest.json + service-worker.js untuk offline caching), lalu di-wrap jadi APK via **PWABuilder.com** (bukan Capacitor, karena user tidak punya akses Android Studio/komputer).
 - Setting PWABuilder yang WAJIB: **Signing key → New** (bukan None, supaya bisa di-install), **Fallback behavior → WebView** (bukan Custom Tabs, supaya tidak muncul address bar — meski di percobaan ini kadang masih muncul, belum 100% konsisten).
 - Hosting: **GitHub Pages** (`https://mr-real-png.github.io/...`), diakses dari Safari lalu di-generate APK-nya dari situ.
-- Setiap kali ada update kode: **APK TIDAK PERLU di-generate ulang** (karena mode WebView cuma “cangkang” yang load URL). Cukup: upload file baru ke GitHub → naikkan versi `CACHE_NAME` di `service-worker.js` → buka app 1x pakai internet (WiFi biasa, bukan WiFi PDA) supaya service worker fetch ulang semua file → baru dipakai offline lagi. **Versi cache terakhir: `gudang-cache-v11` — cek isi `service-worker.js`, naikkan +1 setiap kali kirim update.**
+- Setiap kali ada update kode: **APK TIDAK PERLU di-generate ulang** (karena mode WebView cuma “cangkang” yang load URL). Cukup: upload file baru ke GitHub → naikkan versi `CACHE_NAME` di `service-worker.js` → buka app 1x pakai internet (WiFi biasa, bukan WiFi PDA) supaya service worker fetch ulang semua file → baru dipakai offline lagi. **Versi cache terakhir: `gudang-cache-v13`** — cek isi `service-worker.js`, naikkan +1 setiap kali kirim update.
 
 ## Device quirks yang sudah ditemukan (penting!)
 
@@ -51,41 +51,54 @@ Alur kerja yang diminta user: scan papan/QR **zona gudang dulu** (Lokal/Unpack/H
 
 ## Fitur QR Transfer Import (untuk PC yang port USB/Bluetooth dikunci)
 
-Sudah **selesai di-wiring** ke `import.html` (sebelumnya file `qr-import.js` sudah ada tapi belum terhubung ke UI — sudah diperbaiki):
+Sudah **selesai di-wiring** ke `import.html` dan pakai **scanner fisik PDA** (bukan kamera browser):
 
-- `import.html` sekarang punya toggle mode **“Pilih File”** vs **“Scan QR (dari PC)”** di bagian atas.
-- Mode file: alur lama, upload Excel langsung dari PDA.
-- Mode scan: user buka `qr-generator.html` di PC (halaman terpisah, pakai CDN karena PC ada internet — tidak perlu offline), upload Excel di sana, lalu PDA scan QR yang muncul satu per satu lewat kamera (`js/vendor/html5-qrcode.min.js`, di-download manual dari `https://github.com/mebjas/html5-qrcode` — **belum ada di repo, WAJIB ditambahkan user sebelum mode scan bisa dipakai**, sama seperti `xlsx.full.min.js`).
+- `import.html` punya toggle mode **“Pilih File”** vs **“Scan QR (dari PC)”** di bagian atas.
+- Mode file: alur lama, upload Excel langsung dari PDA (atau lewat `qr-generator.html` di PC kalau upload diblokir security — lihat bagian di bawah).
+- Mode scan: user buka `qr-generator.html` di PC (halaman terpisah, pakai CDN karena PC ada internet — tidak perlu offline), isi data di sana (upload file atau paste teks), lalu **tekan trigger scanner fisik PDA** mengarah ke tiap QR yang muncul di layar PC satu-satu — TC52 punya imager yang bisa baca QR juga, hasilnya masuk sebagai keystroke lewat DataWedge, sama persis mekanismenya dengan scan part number/zona (pakai `initGlobalScanCapture` dari `js/app.js`). **Awalnya sempat dibangun pakai kamera browser (`Html5Qrcode`) tapi diganti ke scanner fisik atas permintaan user — jauh lebih simpel & gak perlu izin kamera.**
 - Format payload QR: `GDG1|<batchId>|<index>|<total>|<payload CSV>`. Begitu semua chunk terkumpul, digabung jadi CSV lalu masuk pipeline import yang sama dengan mode file (`parseSheetRows` → `mapRowToLocationRow` → `groupRowsBySku` → `buildPreview`, semua dari `import.js`).
-- `service-worker.js` sudah dinaikkan ke `gudang-cache-v11` untuk memastikan `import.html` versi baru ke-cache ulang.
+- Chunk cuma diproses kalau mode scan lagi aktif (flag `scanModeActive` di `js/qr-import.js`) — supaya scan barang/zona biasa di halaman lain gak ketuker kalau kebetulan lagi buka Import.
+- `js/vendor/html5-qrcode.min.js` sekarang **cuma dipakai sebagai fallback opsional** tombol kamera di halaman Rak (`rak.js` → `scanWithCamera`, untuk testing tanpa DataWedge) — TIDAK dipakai lagi untuk fitur scan-transfer Import.
+
+## Bug penting yang sudah diperbaiki: Import halaman nyangkut “Memuat…” selamanya
+
+**Gejala:** buka halaman Import di PDA (WiFi kantor, tidak ada internet), stuck di teks placeholder “Memuat…” selamanya, bottom nav gak muncul sama sekali (tanda JS belum sempat jalan sama sekali).
+
+**Akar masalah:** `js/vendor/xlsx.full.min.js` (file besar) dimuat sebagai script **pertama** di `import.html`, sebelum `db.js`/`app.js`. Script tag blocking — semua script sesudahnya nunggu itu selesai di-fetch. File itu tidak ada di `CORE_ASSETS` (cuma runtime-cached opportunistic, baru ke-cache SETELAH pernah berhasil di-fetch sekali dengan internet). Kalau `import.html` pertama kali dibuka pas PDA lagi di WiFi kantor (tidak ada internet), fetch itu nyangkut/gagal lama → seluruh JS di halaman itu gak pernah jalan.
+
+**Perbaikan (sudah diterapkan):**
+
+1. Urutan script di `import.html` dibalik — `db.js`/`app.js`/`import.js`/`qr-import.js` (kecil, selalu ke-precache) dimuat DULUAN supaya nav & UI render duluan; `xlsx.full.min.js` dimuat PALING BELAKANG (dia cuma dipakai saat user benar-benar pilih file, jadi aman telat).
+1. `xlsx.full.min.js` ditambahkan eksplisit ke `CORE_ASSETS` di `service-worker.js` supaya ikut ke-precache paksa saat install, bukan cuma runtime-cache.
+1. **Prinsip umum untuk halaman baru ke depannya:** taruh vendor script besar (SheetJS, dll) di PALING BAWAH urutan `<script>`, setelah semua script inti (`db.js`, `app.js`, dan file page-specific) — supaya UI/nav selalu render duluan biarpun vendor script lambat/gagal fetch.
 
 ## File & struktur
 
 ```
 gudang-app/
 ├── index.html       (Beranda/Search — halaman utama)
-├── import.html       (Import Excel — mode file & mode scan QR)
+├── import.html       (Import Excel — mode file & mode scan QR via scanner fisik)
 ├── rak.html          (Kelola lokasi rak)
-├── qr-generator.html  (dibuka di PC, generate QR chunk dari Excel — pakai CDN, bukan bagian PWA offline)
+├── qr-generator.html  (dibuka di PC, generate QR chunk dari Excel — pakai CDN, bukan bagian PWA offline; ada mode upload file & mode paste teks)
 ├── manifest.json      (PWA metadata)
-├── service-worker.js  (offline caching — CACHE_NAME: gudang-cache-v11, naikkan tiap update)
+├── service-worker.js  (offline caching — CACHE_NAME: gudang-cache-v13, naikkan tiap update)
 ├── css/style.css      (design tokens: warna biru/hijau terang, motif corner-bracket)
 ├── js/
 │   ├── app.js        (nav, toast, icons, fuzzy search util, initGlobalScanCapture)
 │   ├── db.js         (IndexedDB, skema barang, STORAGE_LOCATIONS, matchZoneCode)
 │   ├── search.js      (logic Beranda, handleScanSubmit)
-│   ├── import.js      (parsing Excel via SheetJS, grouping per part number)
-│   ├── qr-import.js    (mode scan QR di import.html, terima chunk dari qr-generator.html)
-│   ├── rak.js         (logic halaman Rak, assign lokasi)
+│   ├── import.js      (parsing Excel via SheetJS, grouping per part number — dipakai mode file & mode scan)
+│   ├── qr-import.js    (mode scan QR di import.html — TERIMA lewat scanner fisik PDA, bukan kamera)
+│   ├── rak.js         (logic halaman Rak, assign lokasi, kamera fallback opsional)
 │   └── vendor/
-│       ├── xlsx.full.min.js       (SheetJS, WAJIB self-hosted, download manual dari cdn.sheetjs.com)
-│       └── html5-qrcode.min.js     (WAJIB self-hosted kalau mau pakai mode scan QR & kamera fallback di Rak — download manual dari github.com/mebjas/html5-qrcode, BELUM ADA di repo)
+│       ├── xlsx.full.min.js       (SheetJS, WAJIB self-hosted, download manual dari cdn.sheetjs.com — dimuat PALING BELAKANG di HTML, lihat catatan bug di atas)
+│       └── html5-qrcode.min.js     (opsional, cuma buat kamera fallback di Rak — download manual dari github.com/mebjas/html5-qrcode kalau mau dipakai, BELUM ADA di repo)
 └── assets/icon-*.png   (ikon app, motif kotak/crate biru)
 ```
 
 ## Yang belum kelar / next steps potensial
 
-- `js/vendor/html5-qrcode.min.js` belum ada di repo — harus di-download manual oleh user dan diupload ke GitHub sebelum mode “Scan QR (dari PC)” di Import dan tombol kamera fallback di Rak bisa jalan. Tanpa file ini, mode file tetap normal, hanya mode scan yang akan menampilkan toast error.
+- `js/vendor/html5-qrcode.min.js` belum ada di repo — cuma dibutuhkan kalau mau pakai tombol kamera fallback opsional di Rak (bukan buat fitur scan-transfer Import lagi, itu sudah pakai scanner fisik). Boleh diabaikan kalau gak butuh fallback itu.
 - QR code untuk 3 papan zona (isi teks `1101`/`1102`/`1401`) belum digenerate — user diarahkan pakai situs QR generator gratis manual.
 - Fallback behavior “WebView” di PWABuilder belum 100% konsisten menghilangkan address bar — mungkin perlu investigasi lebih lanjut atau terima sebagai limitasi kosmetik.
 - Belum ada fitur stok opname / audit berkala.
