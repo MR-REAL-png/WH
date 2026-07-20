@@ -62,7 +62,7 @@
 </div>
 
 <script>
-const CHUNK_MAX_CHARS = 300;
+const CHUNK_MAX_CHARS = 500;
 let chunks = [];
 let batchId = '';
 let currentIndex = 0;
@@ -119,8 +119,8 @@ function renderCurrentChunk() {
   holder.innerHTML = '';
   new QRCode(holder, {
     text: payload,
-    width: 280,
-    height: 280,
+    width: 340,
+    height: 340,
     correctLevel: QRCode.CorrectLevel.M,
   });
 
