@@ -15,7 +15,21 @@
    diparse via SheetJS, lalu masuk ke pipeline import yang SAMA
    dengan mode file (buildHeaderMap/mapRowToLocationRow/groupRowsBySku
    dari import.js — file itu harus dimuat SEBELUM file ini).
+
+   CATATAN FIX (newline placeholder):
+   qr-generator.html meng-escape newline literal (\n) di dalam tiap
+   chunk jadi placeholder teks '~n~' sebelum di-encode ke QR. Ini
+   karena \n asli yang ikut ke-embed di teks QR di-translate DataWedge
+   jadi tombol Enter waktu discan ke <input>, yang bisa motong sisa
+   teks di tengah proses dan bikin 1 chunk keputus jadi 2+ "hasil scan"
+   terpisah (yang belakang gak punya prefix GDG1| -> ditolak sebagai
+   "Bukan QR transfer Gudang"). Makanya di sini, SEBELUM di-parse
+   SheetJS, placeholder '~n~' itu diubah balik jadi '\n' asli (lihat
+   finishScanImport). Placeholder harus sama persis dengan yang dipakai
+   di qr-generator.html (NEWLINE_PLACEHOLDER).
    ========================================================= */
+const NEWLINE_PLACEHOLDER = '~n~';
+
 let scanModeActive = false;
 let scanBatchId = null;
 let scanTotal = 0;
@@ -106,7 +120,9 @@ async function finishScanImport() {
 
   const orderedChunks = [];
   for (let i = 0; i < scanTotal; i++) orderedChunks.push(scanReceived.get(i));
-  const csvText = orderedChunks.join('\n');
+  // Gabung chunk jadi CSV utuh, lalu kembalikan placeholder '~n~' jadi '\n'
+  // asli — lihat catatan fix newline placeholder di header file ini.
+  const csvText = orderedChunks.join('\n').split(NEWLINE_PLACEHOLDER).join('\n');
 
   try {
     const workbook = XLSX.read(csvText, { type: 'string' });
