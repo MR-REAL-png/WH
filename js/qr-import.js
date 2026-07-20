@@ -123,19 +123,13 @@ async function finishScanImport() {
   try {
     const workbook = XLSX.read(csvText, { type: 'string' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
-    if (rows.length === 0) {
-      showToast('Data hasil scan kosong/tidak terbaca', 'error');
-      return;
-    }
-    const headers = Object.keys(rows[0]);
-    const headerMap = buildHeaderMap(headers);
-    if (!headerMap.part_number || !headerMap.nama_barang) {
+    const parsed = parseSheetRows(sheet);
+    if (!parsed) {
       showToast('Kolom Part Number / Name Part tidak ditemukan di data hasil scan', 'error');
       return;
     }
-    const locationRows = rows.map((r) => mapRowToLocationRow(r, headerMap)).filter(Boolean);
+    const locationRows = parsed.dataRows.map((r) => mapRowToLocationRow(r, parsed.headerMap)).filter(Boolean);
     const grouped = groupRowsBySku(locationRows);
     await buildPreview(grouped);
     resetScanState();
