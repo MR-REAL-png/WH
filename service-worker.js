@@ -4,9 +4,15 @@
    supaya app tetap jalan 100% walau device offline total setelah
    pertama kali dibuka & di-cache.
    ========================================================= */
-const CACHE_NAME = 'gudang-cache-v11';
+const CACHE_NAME = 'gudang-cache-v12';
 
-// App shell inti — WAJIB ke-cache saat install
+// App shell inti — WAJIB ke-cache saat install.
+// Vendor script (xlsx, html5-qrcode) SENGAJA dimasukkan ke sini juga —
+// sebelumnya cuma runtime-cached (baru ke-cache SETELAH pernah berhasil
+// di-fetch sekali), jadi kalau install pertama kebetulan gak sempat fetch
+// itu, halaman yang butuh vendor script itu (mis. Import) bisa nyangkut
+// nunggu fetch offline gak akan pernah selesai. Dengan masuk CORE_ASSETS,
+// dia ikut di-precache paksa saat install (asal file-nya memang ada di repo).
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -20,6 +26,8 @@ const CORE_ASSETS = [
   './js/import.js',
   './js/qr-import.js',
   './js/rak.js',
+  './js/vendor/xlsx.full.min.js',
+  './js/vendor/html5-qrcode.min.js',
 ];
 
 self.addEventListener('install', (event) => {
@@ -67,4 +75,3 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
-
