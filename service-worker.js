@@ -4,7 +4,7 @@
    supaya app tetap jalan 100% walau device offline total setelah
    pertama kali dibuka & di-cache.
    ========================================================= */
-const CACHE_NAME = 'gudang-cache-v15';
+const CACHE_NAME = 'gudang-cache-v16';
 
 // App shell inti — WAJIB ke-cache saat install.
 // xlsx.full.min.js SENGAJA dimasukkan ke sini juga (bukan cuma runtime-cached
