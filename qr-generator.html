@@ -18,6 +18,7 @@
   p.sub { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
   input[type=file] { width: 100%; padding: 10px; border: 1.5px dashed var(--border); border-radius: 10px; }
+  textarea { width: 100%; min-height: 160px; padding: 10px; border: 1.5px dashed var(--border); border-radius: 10px; font-family: monospace; font-size: 12.5px; resize: vertical; }
   #qrHolder { display: flex; justify-content: center; padding: 16px; background: #fff; }
   #qrHolder img, #qrHolder canvas { image-rendering: pixelated; }
   .progress-label { text-align: center; font-weight: 700; font-size: 15px; margin-bottom: 4px; }
@@ -31,17 +32,36 @@
   .jump-row input { width: 70px; padding: 8px; border: 1.5px solid var(--border); border-radius: 8px; text-align: center; }
   .hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; margin-top: 10px; }
   .batch-id { font-family: monospace; background: #EEF3F7; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+  .mode-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+  .mode-toggle button { flex: 1; }
+  .mode-btn { background: var(--surface); color: var(--text); border: 1.5px solid var(--border); }
+  .mode-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>QR Transfer Generator</h1>
-  <p class="sub">Untuk PC yang port USB/Bluetooth-nya dikunci. Upload Excel dari SAP, lalu scan QR yang muncul satu-satu pakai kamera di app Gudang PDA.</p>
+  <p class="sub">Untuk PC yang port USB/Bluetooth-nya dikunci atau upload file diblokir security. Isi data dari SAP di sini (upload file ATAU paste teks), lalu scan QR yang muncul satu-satu pakai kamera di app Gudang PDA.</p>
+
+  <div class="mode-toggle">
+    <button class="mode-btn active" id="modeUploadBtn">Upload File</button>
+    <button class="mode-btn" id="modePasteBtn">Paste Teks</button>
+  </div>
 
   <div class="card" id="uploadCard">
     <label style="font-size:13px; font-weight:600; display:block; margin-bottom:8px;">Pilih file Excel (.xlsx)</label>
     <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
     <p class="hint" id="statusMsg"></p>
+  </div>
+
+  <div class="card" id="pasteCard" style="display:none;">
+    <label style="font-size:13px; font-weight:600; display:block; margin-bottom:8px;">Paste data dari Excel</label>
+    <p class="hint" style="margin-top:0; margin-bottom:10px;">
+      Buka file Excel-nya (Excel Online / Google Sheets / app apapun), <b>select semua sel yang mau dikirim termasuk baris header</b> (Part Number, Name Part, Satuan, Storage Location, Qty), copy (Ctrl+C atau tombol Copy), lalu paste di kotak bawah ini.
+    </p>
+    <textarea id="pasteInput" placeholder="Paste hasil copy dari Excel di sini…"></textarea>
+    <button class="btn-primary" id="pasteGoBtn" style="width:100%; margin-top:10px;">Buat QR dari teks ini</button>
+    <p class="hint" id="pasteStatusMsg"></p>
   </div>
 
   <div class="card" id="qrCard" style="display:none;">
@@ -66,7 +86,6 @@ const CHUNK_MAX_CHARS = 500;
 let chunks = [];
 let batchId = '';
 let currentIndex = 0;
-let qrRenderer = null;
 
 function csvEscape(value) {
   const str = String(value ?? '');
@@ -76,6 +95,19 @@ function csvEscape(value) {
   return str;
 }
 
+// ---------- Mode toggle ----------
+document.getElementById('modeUploadBtn').addEventListener('click', () => setMode('upload'));
+document.getElementById('modePasteBtn').addEventListener('click', () => setMode('paste'));
+
+function setMode(mode) {
+  const isUpload = mode === 'upload';
+  document.getElementById('modeUploadBtn').classList.toggle('active', isUpload);
+  document.getElementById('modePasteBtn').classList.toggle('active', !isUpload);
+  document.getElementById('uploadCard').style.display = isUpload ? 'block' : 'none';
+  document.getElementById('pasteCard').style.display = isUpload ? 'none' : 'block';
+}
+
+// ---------- Mode: upload file (via SheetJS) ----------
 // Konversi sheet ke CSV MANUAL (bukan XLSX.utils.sheet_to_csv langsung),
 // karena sheet_to_csv ikut sertakan "used range" penuh yang kadang jauh
 // lebih luas dari data asli (gara-gara formatting kolom/baris kosong di Excel),
@@ -104,7 +136,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
       const workbook = XLSX.read(data, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const csv = sheetToTrimmedCsv(sheet);
-      buildChunks(csv);
+      buildChunks(csv, document.getElementById('statusMsg'));
     } catch (err) {
       document.getElementById('statusMsg').textContent = 'Gagal baca file: ' + err.message;
     }
@@ -112,11 +144,51 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
   reader.readAsArrayBuffer(file);
 });
 
+// ---------- Mode: paste teks (TSV hasil copy dari Excel) ----------
+// Excel/Google Sheets kalau di-copy hasilnya teks dipisah TAB antar kolom,
+// baris baru antar baris. Ini dikonversi ke format CSV yang sama persis
+// dengan yang dipakai mode upload, supaya lolos pipeline chunking yang sama.
+function tsvToCsv(text) {
+  const lines = text.split(/\r\n|\r|\n/);
+  const csvLines = [];
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+    const cells = line.split('\t');
+    let lastNonEmpty = -1;
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i].trim() !== '') lastNonEmpty = i;
+    }
+    if (lastNonEmpty === -1) continue;
+    csvLines.push(cells.slice(0, lastNonEmpty + 1).map(csvEscape).join(','));
+  }
+  return csvLines.join('\n');
+}
+
+document.getElementById('pasteGoBtn').addEventListener('click', () => {
+  const raw = document.getElementById('pasteInput').value;
+  const statusEl = document.getElementById('pasteStatusMsg');
+  if (!raw.trim()) {
+    statusEl.textContent = 'Belum ada teks yang di-paste.';
+    return;
+  }
+  try {
+    const csv = tsvToCsv(raw);
+    if (!csv.trim()) {
+      statusEl.textContent = 'Tidak ada baris data yang terbaca dari teks ini.';
+      return;
+    }
+    buildChunks(csv, statusEl);
+  } catch (err) {
+    statusEl.textContent = 'Gagal memproses teks: ' + err.message;
+  }
+});
+
+// ---------- Shared: chunking + QR render ----------
 function byteLength(str) {
   return new TextEncoder().encode(str).length;
 }
 
-function buildChunks(csvText) {
+function buildChunks(csvText, statusEl) {
   const lines = csvText.split('\n').filter((l) => l.trim().length > 0);
   const raw = [];
   let current = '';
@@ -150,9 +222,10 @@ function buildChunks(csvText) {
   batchId = Date.now().toString(36).slice(-6).toUpperCase();
   currentIndex = 0;
   document.getElementById('batchIdLabel').textContent = batchId;
-  document.getElementById('statusMsg').textContent = `${lines.length} baris data → ${chunks.length} QR code.`;
+  if (statusEl) statusEl.textContent = `${lines.length} baris data → ${chunks.length} QR code.`;
   document.getElementById('qrCard').style.display = 'block';
   document.getElementById('jumpInput').max = chunks.length;
+  document.getElementById('qrCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
   renderCurrentChunk();
 }
 
@@ -161,9 +234,6 @@ function renderCurrentChunk() {
   const payload = `GDG1|${batchId}|${currentIndex}|${total}|${chunks[currentIndex]}`;
   const byteLen = new TextEncoder().encode(payload).length;
   document.getElementById('progressLabel').textContent = `Chunk ${currentIndex + 1} / ${total}`;
-  document.getElementById('statusMsg').textContent =
-    `Diagnostik chunk ini: ${payload.length} karakter, ${byteLen} byte UTF-8` +
-    (byteLen > 700 ? ' ⚠️ jauh di atas batas normal (~530), ada karakter aneh/tidak standar di data ini.' : '');
 
   const holder = document.getElementById('qrHolder');
   holder.innerHTML = '';
