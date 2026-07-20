@@ -82,7 +82,25 @@
 </div>
 
 <script>
-const CHUNK_MAX_CHARS = 180;
+// Chunk dikecilkan sedikit dari 180 -> 160 byte untuk kasih margin, karena
+// escaping newline (lihat NEWLINE_PLACEHOLDER di bawah) bikin panjang payload
+// per baris sedikit lebih besar dari byte asli barisnya.
+const CHUNK_MAX_CHARS = 160;
+
+// Placeholder buat newline literal di dalam payload QR.
+// KENAPA: scanner fisik PDA (DataWedge) mengirim hasil scan sebagai keystroke
+// ke field yang fokus. Kalau ada karakter \n ASLI ikut ke-embed di teks QR
+// (karena 1 chunk bisa berisi beberapa baris CSV yang digabung \n), DataWedge
+// nge-translate \n itu jadi tombol Enter waktu discan ke <input> di app Gudang.
+// Enter itu bisa motong sisa teks di tengah proses ketik/commit, jadi 1 chunk
+// yang harusnya masuk utuh malah keputus jadi 2+ "hasil scan" terpisah — yang
+// belakang gak punya prefix GDG1| di depannya sehingga muncul toast "Bukan QR
+// transfer Gudang, diabaikan" di app & datanya hilang/gak lengkap.
+// FIX: ganti \n literal dengan placeholder teks ini sebelum di-encode ke QR;
+// di sisi app (qr-import.js) placeholder ini di-ubah balik jadi \n asli
+// SEBELUM di-parse SheetJS, jadi hasil parse tetap sama seperti tanpa fix ini.
+const NEWLINE_PLACEHOLDER = '~n~';
+
 let chunks = [];
 let batchId = '';
 let currentIndex = 0;
@@ -223,7 +241,10 @@ function buildChunks(csvText, statusEl) {
 
 function renderCurrentChunk() {
   const total = chunks.length;
-  const payload = `GDG1|${batchId}|${currentIndex}|${total}|${chunks[currentIndex]}`;
+  // Escape newline literal jadi placeholder teks sebelum di-embed ke QR —
+  // lihat penjelasan lengkap di komentar NEWLINE_PLACEHOLDER di atas.
+  const safeChunk = chunks[currentIndex].replace(/\n/g, NEWLINE_PLACEHOLDER);
+  const payload = `GDG1|${batchId}|${currentIndex}|${total}|${safeChunk}`;
   const byteLen = new TextEncoder().encode(payload).length;
   document.getElementById('progressLabel').textContent = `Chunk ${currentIndex + 1} / ${total}`;
 
