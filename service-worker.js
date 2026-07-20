@@ -4,15 +4,16 @@
    supaya app tetap jalan 100% walau device offline total setelah
    pertama kali dibuka & di-cache.
    ========================================================= */
-const CACHE_NAME = 'gudang-cache-v12';
+const CACHE_NAME = 'gudang-cache-v13';
 
 // App shell inti — WAJIB ke-cache saat install.
-// Vendor script (xlsx, html5-qrcode) SENGAJA dimasukkan ke sini juga —
-// sebelumnya cuma runtime-cached (baru ke-cache SETELAH pernah berhasil
-// di-fetch sekali), jadi kalau install pertama kebetulan gak sempat fetch
-// itu, halaman yang butuh vendor script itu (mis. Import) bisa nyangkut
-// nunggu fetch offline gak akan pernah selesai. Dengan masuk CORE_ASSETS,
-// dia ikut di-precache paksa saat install (asal file-nya memang ada di repo).
+// xlsx.full.min.js SENGAJA dimasukkan ke sini juga (bukan cuma runtime-cached
+// opportunistic) — kalau tidak, halaman Import bisa nyangkut nunggu fetch itu
+// selesai saat offline kalau kebetulan belum pernah berhasil di-fetch sekali.
+// html5-qrcode.min.js opsional — cuma dipakai sebagai fallback tombol kamera
+// di halaman Rak (bukan untuk fitur scan-transfer Import, itu sekarang pakai
+// scanner fisik PDA langsung, lihat js/qr-import.js). Aman kalau file ini
+// belum ada di repo, precache-nya bakal skip tanpa bikin install gagal.
 const CORE_ASSETS = [
   './',
   './index.html',
