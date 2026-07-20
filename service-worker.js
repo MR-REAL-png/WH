@@ -4,7 +4,7 @@
    supaya app tetap jalan 100% walau device offline total setelah
    pertama kali dibuka & di-cache.
    ========================================================= */
-const CACHE_NAME = 'gudang-cache-v10';
+const CACHE_NAME = 'gudang-cache-v11';
 
 // App shell inti — WAJIB ke-cache saat install
 const CORE_ASSETS = [
@@ -51,7 +51,8 @@ self.addEventListener('fetch', (event) => {
       return fetch(event.request)
         .then((response) => {
           // Runtime cache: simpan juga file yang belum ada di precache
-          // (misal js/vendor/xlsx.full.min.js) begitu berhasil diambil sekali.
+          // (misal js/vendor/xlsx.full.min.js, js/vendor/html5-qrcode.min.js)
+          // begitu berhasil diambil sekali.
           if (response && response.status === 200) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
@@ -66,3 +67,4 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
