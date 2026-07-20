@@ -51,7 +51,18 @@ function parseSheetRows(sheet) {
       break;
     }
   }
-  if (headerRowIndex === -1) return null;
+
+  if (headerRowIndex === -1) {
+    // Fallback: tidak ketemu baris header sama sekali (misal user cuma paste
+    // baris data tanpa header buat testing cepat) -> asumsikan urutan kolom
+    // standar: Part Number, Name Part, Satuan, Storage Location, Qty, [Lokasi Rak opsional]
+    const firstRow = raw[0] || [];
+    if (firstRow.length < 5) return null; // terlalu sedikit kolom, tidak masuk akal dipaksakan
+    const fallbackMap = { part_number: 0, nama_barang: 1, satuan: 2, storage_location: 3, qty: 4 };
+    if (firstRow.length >= 6) fallbackMap.lokasi_rak = 5;
+    const dataRows = raw.filter((r) => r && r.some((c) => String(c ?? '').trim() !== ''));
+    return { headerMap: fallbackMap, dataRows, usedFallback: true };
+  }
 
   const dataRows = raw
     .slice(headerRowIndex + 1)
@@ -156,6 +167,9 @@ async function handleFile(file) {
     if (!parsed) {
       showToast('Kolom Part Number / Name Part tidak ditemukan di file', 'error');
       return;
+    }
+    if (parsed.usedFallback) {
+      showToast('Header tidak terdeteksi, asumsi urutan kolom standar', 'default');
     }
 
     const locationRows = parsed.dataRows.map((r) => mapRowToLocationRow(r, parsed.headerMap)).filter(Boolean);
