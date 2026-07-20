@@ -117,6 +117,9 @@ async function finishScanImport() {
       showToast('Kolom Part Number / Name Part tidak ditemukan di data hasil scan', 'error');
       return;
     }
+    if (parsed.usedFallback) {
+      showToast('Header tidak terdeteksi, asumsi urutan kolom standar', 'default');
+    }
     const locationRows = parsed.dataRows.map((r) => mapRowToLocationRow(r, parsed.headerMap)).filter(Boolean);
     const grouped = groupRowsBySku(locationRows);
     await buildPreview(grouped);
