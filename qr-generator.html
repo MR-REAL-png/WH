@@ -68,6 +68,32 @@ let batchId = '';
 let currentIndex = 0;
 let qrRenderer = null;
 
+function csvEscape(value) {
+  const str = String(value ?? '');
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
+}
+
+// Konversi sheet ke CSV MANUAL (bukan XLSX.utils.sheet_to_csv langsung),
+// karena sheet_to_csv ikut sertakan "used range" penuh yang kadang jauh
+// lebih luas dari data asli (gara-gara formatting kolom/baris kosong di Excel),
+// bikin 1 baris jadi penuh koma kosong sampai ribuan karakter -> QR overflow.
+function sheetToTrimmedCsv(sheet) {
+  const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  const lines = [];
+  for (const row of raw) {
+    let lastNonEmpty = -1;
+    for (let i = 0; i < row.length; i++) {
+      if (String(row[i] ?? '').trim() !== '') lastNonEmpty = i;
+    }
+    if (lastNonEmpty === -1) continue; // baris kosong total, buang
+    lines.push(row.slice(0, lastNonEmpty + 1).map(csvEscape).join(','));
+  }
+  return lines.join('\n');
+}
+
 document.getElementById('fileInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -77,7 +103,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
       const data = new Uint8Array(ev.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const csv = XLSX.utils.sheet_to_csv(sheet);
+      const csv = sheetToTrimmedCsv(sheet);
       buildChunks(csv);
     } catch (err) {
       document.getElementById('statusMsg').textContent = 'Gagal baca file: ' + err.message;
@@ -88,18 +114,29 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
 
 function buildChunks(csvText) {
   const lines = csvText.split('\n').filter((l) => l.trim().length > 0);
-  chunks = [];
+  const raw = [];
   let current = '';
   for (const line of lines) {
+    // Pengaman: kalau 1 baris SENDIRI sudah lebih panjang dari batas chunk
+    // (harusnya jarang terjadi setelah trimming di atas), paksa potong per
+    // karakter biar tidak bikin QR overflow.
+    if (line.length > CHUNK_MAX_CHARS) {
+      if (current) { raw.push(current); current = ''; }
+      for (let i = 0; i < line.length; i += CHUNK_MAX_CHARS) {
+        raw.push(line.slice(i, i + CHUNK_MAX_CHARS));
+      }
+      continue;
+    }
     const candidate = current ? current + '\n' + line : line;
     if (candidate.length > CHUNK_MAX_CHARS && current) {
-      chunks.push(current);
+      raw.push(current);
       current = line;
     } else {
       current = candidate;
     }
   }
-  if (current) chunks.push(current);
+  if (current) raw.push(current);
+  chunks = raw;
 
   batchId = Date.now().toString(36).slice(-6).toUpperCase();
   currentIndex = 0;
@@ -117,12 +154,16 @@ function renderCurrentChunk() {
 
   const holder = document.getElementById('qrHolder');
   holder.innerHTML = '';
-  new QRCode(holder, {
-    text: payload,
-    width: 340,
-    height: 340,
-    correctLevel: QRCode.CorrectLevel.M,
-  });
+  try {
+    new QRCode(holder, {
+      text: payload,
+      width: 340,
+      height: 340,
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  } catch (err) {
+    holder.innerHTML = `<p style="color:#C0392B; font-size:13px; text-align:center;">Gagal generate QR chunk ini (${err.message}). Coba turunkan CHUNK_MAX_CHARS atau lewati chunk ini.</p>`;
+  }
 
   document.getElementById('prevBtn').disabled = currentIndex === 0;
   document.getElementById('nextBtn').disabled = currentIndex === total - 1;
