@@ -1,209 +1,108 @@
-/* =========================================================
-   GUDANG — Import page logic
-   Parsing via SheetJS (js/vendor/xlsx.full.min.js — self-hosted).
-   Format asli SAP: part number, name part, satuan, storage location, qty
-   -> satu part number bisa muncul di beberapa baris (beda storage location),
-      jadi baris-baris itu di-GROUP dulu per part number sebelum di-merge.
-   ========================================================= */
-let pendingGroups = []; // hasil grouping+merge, siap disimpan
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Gudang — Import Data</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1B5FA8">
+</head>
+<body>
 
-const COLUMN_ALIASES = {
-  part_number: ['part number', 'part_number', 'sku', 'kode', 'material', 'no material'],
-  nama_barang: ['name part', 'nama barang', 'nama_barang', 'material description', 'deskripsi', 'nama'],
-  satuan: ['satuan', 'unit', 'uom'],
-  storage_location: ['storage loacation', 'storage location', 'storage_location', 'lokasi', 'plant', 'gudang'],
-  qty: ['qty', 'quantity', 'stok', 'stock', 'jumlah', 'stok qty'],
-  lokasi_rak: ['lokasi rak', 'lokasi_rak', 'rak', 'kode rak', 'rack location', 'rack'],
-};
+<header class="topbar">
+  <span class="topbar__eyebrow">Gudang · Sinkronisasi</span>
+  <h1 class="topbar__title">Import Data SAP</h1>
+  <div class="topbar__meta" id="lastImportMeta">
+    <span class="dot"></span>
+    <span>Memuat…</span>
+  </div>
+</header>
 
-function normalizeHeader(h) {
-  return String(h || '').trim().toLowerCase();
-}
+<main class="container">
 
-function buildHeaderMap(headers) {
-  const normalized = headers.map(normalizeHeader);
-  const map = {};
-  for (const [field, aliases] of Object.entries(COLUMN_ALIASES)) {
-    const idx = normalized.findIndex((h) => aliases.includes(h));
-    if (idx >= 0) map[field] = idx; // simpan INDEX kolom, bukan nama — biar kompatibel dengan baris berbasis array
+  <!-- Mode toggle: file langsung vs terima lewat QR (PC yang port-nya dikunci) -->
+  <div class="filters" id="importModeToggle" style="margin-bottom:4px;">
+    <button class="filter-pill active" id="modeFileBtn">Pilih File</button>
+    <button class="filter-pill" id="modeScanBtn">Scan QR (dari PC)</button>
+  </div>
+
+  <!-- ===== Mode: pilih file langsung ===== -->
+  <div id="fileImportSection">
+    <div class="dropzone" id="dropzone" style="margin-top:14px;">
+      <div id="dropIconSlot"></div>
+      <h3>Pilih file Excel</h3>
+      <p>.xlsx atau .csv hasil export dari SAP</p>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none;">
+    </div>
+  </div>
+
+  <!-- ===== Mode: scan QR chunk dari qr-generator.html ===== -->
+  <div id="scanImportSection" style="display:none; margin-top:14px;">
+    <div class="card">
+      <span class="section-label">Scan QR dari layar PC</span>
+      <p class="text-muted" style="font-size:12.5px; line-height:1.6;">
+        Buka <span class="mono">qr-generator.html</span> di PC (butuh internet untuk load library, terpisah dari app ini), upload Excel di sana, lalu arahkan kamera PDA ke tiap QR yang muncul satu-satu.
+      </p>
+      <div id="qrReader" style="margin-top:14px; border-radius:var(--radius-sm); overflow:hidden; background:#000; min-height:220px;"></div>
+      <div style="display:flex; gap:8px; margin-top:14px;">
+        <button class="btn btn--primary btn--block" id="startScanBtn">Mulai Kamera</button>
+        <button class="btn btn--secondary btn--block" id="stopScanBtn" style="display:none;">Stop Kamera</button>
+      </div>
+    </div>
+
+    <div class="card" id="scanProgressCard" style="display:none; margin-top:12px;">
+      <span class="section-label">Progress transfer</span>
+      <div class="progress-label" id="scanProgressLabel" style="font-family:var(--font-display); font-size:20px; font-weight:700; text-align:center;">0 / 0</div>
+      <p class="text-muted" id="scanMissingLabel" style="font-size:12.5px; text-align:center; margin-top:6px;"></p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <span class="section-label">Format kolom yang dikenali</span>
+    <p class="text-muted" style="font-size:13px; line-height:1.6;">
+      Part Number · Name Part · Satuan · Storage Location · Qty
+    </p>
+    <p class="text-muted" style="font-size:12px; line-height:1.5; margin-top:8px;">
+      Satu part number boleh muncul di beberapa baris (beda storage location) — otomatis digabung jadi 1 barang dengan breakdown qty per lokasi.
+    </p>
+  </div>
+
+  <div id="previewArea" style="display:none; margin-top:16px;">
+    <div class="card">
+      <span class="section-label">Ringkasan perubahan</span>
+      <div class="summary-grid">
+        <div class="summary-stat"><b id="statNew">0</b><span>Baru</span></div>
+        <div class="summary-stat"><b id="statUpdated">0</b><span>Diupdate</span></div>
+        <div class="summary-stat"><b id="statTotal">0</b><span>Total baris</span></div>
+      </div>
+      <p class="text-muted" style="font-size:12.5px; margin-top:12px; line-height:1.5;">
+        Lokasi rak yang sudah kamu assign <b>tidak akan berubah</b>. Qty per storage location (Lokal/Unpack/Highrack) diupdate sesuai file terbaru.
+      </p>
+    </div>
+
+    <button class="btn btn--primary btn--block btn--lg" id="confirmImportBtn" style="margin-top:14px;">
+      Konfirmasi Import
+    </button>
+    <button class="btn btn--ghost btn--block" id="cancelImportBtn" style="margin-top:8px;">Batal</button>
+  </div>
+</main>
+
+<!-- SheetJS: harus di-hosting lokal karena app jalan offline di PDA (tidak ada CDN saat runtime). -->
+<script src="js/vendor/xlsx.full.min.js"></script>
+<!-- html5-qrcode: dipakai untuk mode "Scan QR (dari PC)". Self-hosted, download manual dari
+     https://github.com/mebjas/html5-qrcode ke js/vendor/html5-qrcode.min.js — sama seperti xlsx,
+     WAJIB self-hosted karena tidak ada CDN saat runtime di PDA. Kalau file belum ada, mode file
+     tetap jalan normal; hanya mode scan yang akan menampilkan pesan error saat dibuka. -->
+<script src="js/vendor/html5-qrcode.min.js"></script>
+<script src="js/db.js"></script>
+<script src="js/app.js"></script>
+<script src="js/import.js"></script>
+<script src="js/qr-import.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js'));
   }
-  return map;
-}
-
-/**
- * Cari baris header secara otomatis di antara beberapa baris pertama sheet
- * (posisi header di file SAP kadang row 1, kadang ada baris kosong/judul
- * di atasnya — jadi tidak bisa diasumsikan selalu row 1).
- * Mengembalikan { headerMap, dataRows } atau null kalau tidak ketemu.
- */
-function parseSheetRows(sheet) {
-  const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-  const scanLimit = Math.min(raw.length, 15);
-  let headerRowIndex = -1;
-  let headerMap = null;
-
-  for (let i = 0; i < scanLimit; i++) {
-    const candidate = (raw[i] || []).map((c) => String(c ?? ''));
-    const map = buildHeaderMap(candidate);
-    if (map.part_number !== undefined && map.nama_barang !== undefined) {
-      headerRowIndex = i;
-      headerMap = map;
-      break;
-    }
-  }
-  if (headerRowIndex === -1) return null;
-
-  const dataRows = raw
-    .slice(headerRowIndex + 1)
-    .filter((r) => r && r.some((c) => String(c ?? '').trim() !== ''));
-
-  return { headerMap, dataRows };
-}
-
-function mapRowToLocationRow(row, headerMap) {
-  const get = (field) => {
-    const col = headerMap[field];
-    return col !== undefined ? row[col] : undefined;
-  };
-  const partNumber = get('part_number');
-  const nama = get('nama_barang');
-  if (!partNumber || !nama) return null;
-
-  let qty = get('qty');
-  qty = typeof qty === 'number' ? qty : parseInt(String(qty || '0').replace(/[^\d-]/g, ''), 10) || 0;
-
-  const storageLocRaw = get('storage_location');
-  const storageLoc = storageLocRaw !== undefined ? String(storageLocRaw).trim() : '';
-
-  const lokasiRakRaw = get('lokasi_rak');
-  const lokasiRak = lokasiRakRaw !== undefined ? String(lokasiRakRaw).trim().toUpperCase() : '';
-
-  return {
-    sku: String(partNumber).trim(),
-    part_number: String(partNumber).trim(),
-    nama_barang: String(nama).trim(),
-    satuan: get('satuan') ? String(get('satuan')).trim() : '',
-    storage_location: storageLoc,
-    lokasi_rak: lokasiRak,
-    qty,
-  };
-}
-
-/** Kumpulkan semua baris (per storage location) jadi satu grup per part number */
-function groupRowsBySku(locationRows) {
-  const groups = {};
-  for (const row of locationRows) {
-    if (!groups[row.sku]) {
-      groups[row.sku] = {
-        sku: row.sku,
-        part_number: row.part_number,
-        nama_barang: row.nama_barang,
-        satuan: row.satuan,
-        stok: {},
-        tanggal_kedatangan: '',
-        lokasi_rak: '',
-      };
-    }
-    const g = groups[row.sku];
-    // Kalau ada baris duplikat utk sku+lokasi yang sama, dijumlahkan (jaga-jaga)
-    if (GudangDB.STORAGE_LOCATION_ORDER.includes(row.storage_location)) {
-      g.stok[row.storage_location] = (g.stok[row.storage_location] || 0) + row.qty;
-    }
-    if (!g.nama_barang) g.nama_barang = row.nama_barang;
-    if (!g.satuan) g.satuan = row.satuan;
-    if (!g.lokasi_rak && row.lokasi_rak) g.lokasi_rak = row.lokasi_rak;
-  }
-  return Object.values(groups);
-}
-
-async function initImportPage() {
-  renderBottomNav('import');
-  document.getElementById('dropIconSlot').innerHTML = Icons.upload;
-  await renderLastImportMeta();
-
-  const dropzone = document.getElementById('dropzone');
-  const fileInput = document.getElementById('fileInput');
-  dropzone.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', (e) => {
-    if (e.target.files[0]) handleFile(e.target.files[0]);
-  });
-
-  document.getElementById('cancelImportBtn').addEventListener('click', resetPreview);
-  document.getElementById('confirmImportBtn').addEventListener('click', confirmImport);
-}
-
-async function renderLastImportMeta() {
-  const lastImport = await GudangDB.getMeta('last_import_at');
-  const el = document.getElementById('lastImportMeta');
-  if (!lastImport) {
-    el.innerHTML = `<span class="dot dot--stale"></span><span>Belum pernah import</span>`;
-    return;
-  }
-  el.innerHTML = `<span class="dot"></span><span>Import terakhir: ${relativeTime(lastImport)} (${formatDate(lastImport)})</span>`;
-}
-
-async function handleFile(file) {
-  try {
-    if (typeof XLSX === 'undefined') {
-      showToast('Library Excel (SheetJS) belum tersedia di js/vendor/', 'error');
-      return;
-    }
-    const data = await file.arrayBuffer();
-    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-
-    const parsed = parseSheetRows(sheet);
-    if (!parsed) {
-      showToast('Kolom Part Number / Name Part tidak ditemukan di file', 'error');
-      return;
-    }
-
-    const locationRows = parsed.dataRows.map((r) => mapRowToLocationRow(r, parsed.headerMap)).filter(Boolean);
-    const grouped = groupRowsBySku(locationRows);
-    await buildPreview(grouped);
-  } catch (err) {
-    console.error(err);
-    showToast('Gagal membaca file: ' + err.message, 'error');
-  }
-}
-
-async function buildPreview(groupedRows) {
-  const existingAll = await GudangDB.getAllBarang();
-  const existingBySku = Object.fromEntries(existingAll.map((b) => [b.sku, b]));
-
-  pendingGroups = groupedRows.map((g) => GudangDB.mergeFromImport(existingBySku[g.sku], g));
-
-  const newCount = pendingGroups.filter((r) => r.is_new).length;
-  const updatedCount = pendingGroups.length - newCount;
-
-  document.getElementById('statNew').textContent = newCount;
-  document.getElementById('statUpdated').textContent = updatedCount;
-  document.getElementById('statTotal').textContent = pendingGroups.length;
-  document.getElementById('previewArea').style.display = 'block';
-  document.getElementById('previewArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-async function confirmImport() {
-  if (pendingGroups.length === 0) return;
-  const btn = document.getElementById('confirmImportBtn');
-  btn.disabled = true;
-  btn.textContent = 'Menyimpan…';
-
-  const cleaned = pendingGroups.map(({ is_new, ...rest }) => rest);
-  await GudangDB.putManyBarang(cleaned);
-  await GudangDB.setMeta('last_import_at', new Date().toISOString());
-
-  showToast(`${cleaned.length} part number berhasil disinkronkan`, 'success');
-  resetPreview();
-  await renderLastImportMeta();
-  document.getElementById('fileInput').value = '';
-  btn.disabled = false;
-  btn.textContent = 'Konfirmasi Import';
-}
-
-function resetPreview() {
-  pendingGroups = [];
-  document.getElementById('previewArea').style.display = 'none';
-}
-
-initImportPage();
+</script>
+</body>
+</html>
