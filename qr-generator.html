@@ -112,23 +112,32 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
   reader.readAsArrayBuffer(file);
 });
 
+function byteLength(str) {
+  return new TextEncoder().encode(str).length;
+}
+
 function buildChunks(csvText) {
   const lines = csvText.split('\n').filter((l) => l.trim().length > 0);
   const raw = [];
   let current = '';
   for (const line of lines) {
-    // Pengaman: kalau 1 baris SENDIRI sudah lebih panjang dari batas chunk
-    // (harusnya jarang terjadi setelah trimming di atas), paksa potong per
-    // karakter biar tidak bikin QR overflow.
-    if (line.length > CHUNK_MAX_CHARS) {
+    if (byteLength(line) > CHUNK_MAX_CHARS) {
       if (current) { raw.push(current); current = ''; }
-      for (let i = 0; i < line.length; i += CHUNK_MAX_CHARS) {
-        raw.push(line.slice(i, i + CHUNK_MAX_CHARS));
+      // Potong per karakter tapi cek ulang byte-nya, biar tidak motong di tengah karakter multi-byte
+      let piece = '';
+      for (const ch of line) {
+        if (byteLength(piece + ch) > CHUNK_MAX_CHARS) {
+          raw.push(piece);
+          piece = ch;
+        } else {
+          piece += ch;
+        }
       }
+      if (piece) raw.push(piece);
       continue;
     }
     const candidate = current ? current + '\n' + line : line;
-    if (candidate.length > CHUNK_MAX_CHARS && current) {
+    if (byteLength(candidate) > CHUNK_MAX_CHARS && current) {
       raw.push(current);
       current = line;
     } else {
@@ -150,7 +159,11 @@ function buildChunks(csvText) {
 function renderCurrentChunk() {
   const total = chunks.length;
   const payload = `GDG1|${batchId}|${currentIndex}|${total}|${chunks[currentIndex]}`;
+  const byteLen = new TextEncoder().encode(payload).length;
   document.getElementById('progressLabel').textContent = `Chunk ${currentIndex + 1} / ${total}`;
+  document.getElementById('statusMsg').textContent =
+    `Diagnostik chunk ini: ${payload.length} karakter, ${byteLen} byte UTF-8` +
+    (byteLen > 700 ? ' ⚠️ jauh di atas batas normal (~530), ada karakter aneh/tidak standar di data ini.' : '');
 
   const holder = document.getElementById('qrHolder');
   holder.innerHTML = '';
@@ -162,7 +175,7 @@ function renderCurrentChunk() {
       correctLevel: QRCode.CorrectLevel.M,
     });
   } catch (err) {
-    holder.innerHTML = `<p style="color:#C0392B; font-size:13px; text-align:center;">Gagal generate QR chunk ini (${err.message}). Coba turunkan CHUNK_MAX_CHARS atau lewati chunk ini.</p>`;
+    holder.innerHTML = `<p style="color:#C0392B; font-size:13px; text-align:center;">Gagal generate QR chunk ini (${err.message}).<br>Panjang: ${payload.length} karakter / ${byteLen} byte.<br><br><b>Isi chunk (untuk debug):</b><br><span style="font-family:monospace; font-size:11px; word-break:break-all;">${payload.slice(0, 400).replace(/</g,'&lt;')}${payload.length > 400 ? '…' : ''}</span></p>`;
   }
 
   document.getElementById('prevBtn').disabled = currentIndex === 0;
