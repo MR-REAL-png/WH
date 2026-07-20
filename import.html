@@ -37,17 +37,15 @@
     </div>
   </div>
 
-  <!-- ===== Mode: scan QR chunk dari qr-generator.html ===== -->
+  <!-- ===== Mode: scan QR chunk dari qr-generator.html (pakai scanner fisik PDA) ===== -->
   <div id="scanImportSection" style="display:none; margin-top:14px;">
     <div class="card">
-      <span class="section-label">Scan QR dari layar PC</span>
+      <span class="section-label">Scan pakai scanner fisik PDA</span>
       <p class="text-muted" style="font-size:12.5px; line-height:1.6;">
-        Buka <span class="mono">qr-generator.html</span> di PC (butuh internet untuk load library, terpisah dari app ini), upload Excel di sana, lalu arahkan kamera PDA ke tiap QR yang muncul satu-satu.
+        Buka <span class="mono">qr-generator.html</span> di PC (butuh internet untuk load library, terpisah dari app ini), isi data di sana (upload file atau paste teks), lalu <b>tekan trigger scanner PDA</b> mengarah ke tiap QR yang muncul di layar PC satu-satu — sama seperti scan barang biasa, tidak perlu buka kamera.
       </p>
-      <div id="qrReader" style="margin-top:14px; border-radius:var(--radius-sm); overflow:hidden; background:#000; min-height:220px;"></div>
-      <div style="display:flex; gap:8px; margin-top:14px;">
-        <button class="btn btn--primary btn--block" id="startScanBtn">Mulai Kamera</button>
-        <button class="btn btn--secondary btn--block" id="stopScanBtn" style="display:none;">Stop Kamera</button>
+      <div class="rak-target is-active" style="margin-top:14px; padding:18px;">
+        <div id="scanReadyLabel" style="font-size:14px; font-weight:600; color:var(--primary-dark);">Siap menerima scan — arahkan scanner PDA ke QR pertama di layar PC.</div>
       </div>
     </div>
 
@@ -90,18 +88,14 @@
 
 <!-- Script inti dimuat DULUAN (kecil, selalu ke-precache) supaya nav & UI render
      langsung walau vendor script di bawah lambat/gagal fetch. Vendor script cuma dipakai
-     saat user benar-benar pilih file / mulai scan, jadi aman dimuat belakangan. -->
+     saat user benar-benar pilih file, jadi aman dimuat belakangan. -->
 <script src="js/db.js"></script>
 <script src="js/app.js"></script>
 <script src="js/import.js"></script>
 <script src="js/qr-import.js"></script>
-<!-- SheetJS: harus di-hosting lokal karena app jalan offline di PDA (tidak ada CDN saat runtime). -->
+<!-- SheetJS: harus di-hosting lokal karena app jalan offline di PDA (tidak ada CDN saat runtime).
+     Dipakai untuk mode file DAN untuk parsing hasil scan (keduanya lewat import.js). -->
 <script src="js/vendor/xlsx.full.min.js"></script>
-<!-- html5-qrcode: dipakai untuk mode "Scan QR (dari PC)". Self-hosted, download manual dari
-     https://github.com/mebjas/html5-qrcode ke js/vendor/html5-qrcode.min.js — sama seperti xlsx,
-     WAJIB self-hosted karena tidak ada CDN saat runtime di PDA. Kalau file belum ada, mode file
-     tetap jalan normal; hanya mode scan yang akan menampilkan pesan error saat dibuka. -->
-<script src="js/vendor/html5-qrcode.min.js"></script>
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js'));
