@@ -42,6 +42,18 @@ async function initBeranda() {
   await loadData();
 }
 
+/** Semua kode rak yang sedang dipakai (di storage location manapun) */
+function collectRaksInUse() {
+  const set = new Set();
+  allBarang.forEach((b) => {
+    GudangDB.STORAGE_LOCATION_ORDER.forEach((code) => {
+      const rak = b.lokasi_rak?.[code];
+      if (rak) set.add(rak.toUpperCase());
+    });
+  });
+  return set;
+}
+
 /**
  * Dipanggil saat Enter ditekan di field pencarian — ini yang membedakan
  * "hasil scan" (scanner Zebra otomatis kirim Enter) dari ngetik manual.
@@ -69,11 +81,14 @@ function handleScanSubmit(rawValue) {
     return;
   }
 
-  // Cek dulu apakah teks ini persis salah satu kode rak yang sudah pernah diassign
+  // Cek dulu apakah teks ini persis salah satu kode rak yang sudah pernah
+  // diassign (di storage location manapun)
   const rakUpper = raw.toUpperCase();
-  const raksInUse = new Set(allBarang.filter((b) => b.lokasi_rak).map((b) => b.lokasi_rak.toUpperCase()));
+  const raksInUse = collectRaksInUse();
   if (raksInUse.has(rakUpper)) {
-    scanMatches = allBarang.filter((b) => b.lokasi_rak && b.lokasi_rak.toUpperCase() === rakUpper);
+    scanMatches = allBarang.filter((b) =>
+      GudangDB.STORAGE_LOCATION_ORDER.some((code) => (b.lokasi_rak?.[code] || '').toUpperCase() === rakUpper)
+    );
     currentQuery = '';
     document.querySelectorAll('.filter-pill').forEach((b) => b.classList.remove('active'));
     document.getElementById('searchInput').value = '';
@@ -130,8 +145,8 @@ function getFilteredSorted() {
   let list = allBarang;
 
   if (currentFilter === 'tanpa_lokasi') {
-    list = list.filter((b) => !b.lokasi_rak);
-  } else if (['1101', '1102', '1401', '2101'].includes(currentFilter)) {
+    list = list.filter((b) => GudangDB.isFullyUnassigned(b));
+  } else if (['1101', '1102', '1401'].includes(currentFilter)) {
     list = list.filter((b) => (b.stok?.[currentFilter] || 0) > 0);
   }
 
@@ -156,6 +171,22 @@ function renderStokChips(stok) {
     .map((code) => {
       const loc = GudangDB.STORAGE_LOCATIONS[code];
       return `<span class="stok-chip loc-${code}">${loc.short} <b>${stok[code].toLocaleString('id-ID')}</b></span>`;
+    })
+    .join('');
+}
+
+/** Satu baris "📍 lokasi" PER storage location yang qty-nya >0 — bisa beda rak antar lokasi */
+function renderLokasiLines(b) {
+  const activeCodes = GudangDB.STORAGE_LOCATION_ORDER.filter((code) => (b.stok?.[code] || 0) > 0);
+  if (activeCodes.length === 0) {
+    return `<span class="item-card__loc is-empty">${Icons.alert}Tidak ada stok</span>`;
+  }
+  return activeCodes
+    .map((code) => {
+      const rak = b.lokasi_rak?.[code];
+      const loc = GudangDB.STORAGE_LOCATIONS[code];
+      const prefix = activeCodes.length > 1 ? `${loc.short}: ` : '';
+      return `<span class="item-card__loc ${rak ? '' : 'is-empty'}">${rak ? Icons.pin : Icons.alert}${prefix}${rak ? escapeHtml(rak) : 'Belum ada lokasi rak'}</span>`;
     })
     .join('');
 }
@@ -186,7 +217,6 @@ function renderList() {
 }
 
 function renderCard(b) {
-  const hasLokasi = !!b.lokasi_rak;
   const total = GudangDB.totalStok(b.stok);
   return `
     <div class="item-card" data-sku="${escapeHtml(b.sku)}">
@@ -199,11 +229,8 @@ function renderCard(b) {
         <span class="item-card__qty">Total <b>${total.toLocaleString('id-ID')}</b></span>
       </div>
       <div class="stok-chips">${renderStokChips(b.stok)}</div>
-      <div class="item-card__bottom" style="margin-top:10px;">
-        <span class="item-card__loc ${hasLokasi ? '' : 'is-empty'}">
-          ${hasLokasi ? Icons.pin : Icons.alert}
-          ${hasLokasi ? escapeHtml(b.lokasi_rak) : 'Belum ada lokasi rak'}
-        </span>
+      <div class="item-card__bottom" style="margin-top:10px; flex-direction:column; align-items:flex-start; gap:4px;">
+        ${renderLokasiLines(b)}
       </div>
     </div>`;
 }
@@ -211,7 +238,6 @@ function renderCard(b) {
 async function openDetail(sku) {
   const b = await GudangDB.getBarang(sku);
   if (!b) return;
-  const hasLokasi = !!b.lokasi_rak;
   const total = GudangDB.totalStok(b.stok);
 
   const nonZeroLocations = GudangDB.STORAGE_LOCATION_ORDER.filter((code) => (b.stok?.[code] || 0) > 0);
@@ -219,10 +245,17 @@ async function openDetail(sku) {
     ? nonZeroLocations.map((code) => {
         const loc = GudangDB.STORAGE_LOCATIONS[code];
         const qty = b.stok[code];
+        const rak = b.lokasi_rak?.[code];
         return `
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border);">
-        <span class="badge badge--${loc.badge}">${loc.label}</span>
-        <b class="mono">${qty.toLocaleString('id-ID')}</b>
+      <div style="padding:10px 0; border-bottom:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span class="badge badge--${loc.badge}">${loc.label}</span>
+          <b class="mono">${qty.toLocaleString('id-ID')}</b>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+          <span class="text-muted" style="font-size:12.5px;">${rak ? `Rak: <b class="mono">${escapeHtml(rak)}</b>` : 'Belum ada lokasi rak'}</span>
+          <a href="rak.html?assign=${encodeURIComponent(b.sku)}&code=${code}" class="link-plain" style="font-size:12.5px;">${rak ? 'Ubah' : 'Assign'}</a>
+        </div>
       </div>`;
       }).join('')
     : `<p class="text-muted" style="font-size:13px; padding:14px 4px;">Tidak ada stok di lokasi manapun.</p>`;
@@ -242,15 +275,8 @@ async function openDetail(sku) {
     </div>
 
     <div class="field" style="margin-top:18px;">
-      <label>Breakdown per storage location</label>
+      <label>Breakdown &amp; lokasi rak per storage location</label>
       <div class="card" style="padding:4px 16px;">${breakdownRows}</div>
-    </div>
-
-    <div class="field">
-      <label>Lokasi rak (fisik, manual)</label>
-      <div class="rak-target" style="padding:18px;">
-        <div class="rak-target__code" style="font-size:20px;">${hasLokasi ? escapeHtml(b.lokasi_rak) : '— belum diassign —'}</div>
-      </div>
     </div>
 
     ${b.tanggal_kedatangan ? `
@@ -264,8 +290,8 @@ async function openDetail(sku) {
       <input value="${relativeTime(b.last_synced)}" disabled>
     </div>
 
-    <a href="rak.html?assign=${encodeURIComponent(b.sku)}" class="btn btn--primary btn--block btn--lg">
-      ${Icons.scan} ${hasLokasi ? 'Ubah lokasi rak' : 'Assign lokasi rak'}
+    <a href="rak.html?assign=${encodeURIComponent(b.sku)}" class="btn btn--secondary btn--block">
+      ${Icons.scan} Kelola lokasi rak
     </a>
     <button class="btn btn--ghost btn--block" id="closeDetailBtn" style="margin-top:8px;">Tutup</button>
   `;
