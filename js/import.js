@@ -4,6 +4,12 @@
    Format asli SAP: part number, name part, satuan, storage location, qty
    -> satu part number bisa muncul di beberapa baris (beda storage location),
       jadi baris-baris itu di-GROUP dulu per part number sebelum di-merge.
+
+   CATATAN SKEMA lokasi_rak (Juli 2026): dulu 1 string per barang, sekarang
+   per storage location (lihat db.js). Kolom "lokasi rak" di Excel (kalau
+   ada) sekarang diarahkan ke storage location BARIS ITU SENDIRI, bukan jadi
+   1 nilai global buat semua lokasi — pas banget karena 1 baris Excel = 1
+   storage location.
    ========================================================= */
 let pendingGroups = []; // hasil grouping+merge, siap disimpan
 
@@ -100,7 +106,12 @@ function mapRowToLocationRow(row, headerMap) {
   };
 }
 
-/** Kumpulkan semua baris (per storage location) jadi satu grup per part number */
+/**
+ * Kumpulkan semua baris (per storage location) jadi satu grup per part number.
+ * lokasi_rak dikumpulkan PER STORAGE LOCATION (bukan 1 nilai global) —
+ * 1 baris Excel = 1 storage location, jadi kolom lokasi rak di baris itu
+ * (kalau ada & terisi) diarahkan ke storage location baris itu sendiri.
+ */
 function groupRowsBySku(locationRows) {
   const groups = {};
   for (const row of locationRows) {
@@ -112,17 +123,17 @@ function groupRowsBySku(locationRows) {
         satuan: row.satuan,
         stok: {},
         tanggal_kedatangan: '',
-        lokasi_rak: '',
+        lokasi_rak: {}, // { '1101'?: kode, '1102'?: kode, '1401'?: kode } — cuma keisi kalau kolomnya ada & terisi di Excel
       };
     }
     const g = groups[row.sku];
     // Kalau ada baris duplikat utk sku+lokasi yang sama, dijumlahkan (jaga-jaga)
     if (GudangDB.STORAGE_LOCATION_ORDER.includes(row.storage_location)) {
       g.stok[row.storage_location] = (g.stok[row.storage_location] || 0) + row.qty;
+      if (row.lokasi_rak) g.lokasi_rak[row.storage_location] = row.lokasi_rak;
     }
     if (!g.nama_barang) g.nama_barang = row.nama_barang;
     if (!g.satuan) g.satuan = row.satuan;
-    if (!g.lokasi_rak && row.lokasi_rak) g.lokasi_rak = row.lokasi_rak;
   }
   return Object.values(groups);
 }
