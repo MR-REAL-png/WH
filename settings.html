@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Gudang — Pengaturan</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1B5FA8">
+</head>
+<body>
+
+<header class="topbar">
+  <span class="topbar__eyebrow">Gudang · Pengaturan</span>
+  <h1 class="topbar__title">Pengaturan</h1>
+</header>
+
+<main class="container">
+  <div class="card">
+    <span class="section-label">Ringkasan data</span>
+    <div class="summary-grid" style="grid-template-columns: 1fr 1fr;">
+      <div class="summary-stat"><b id="statTotalBarang">0</b><span>Total Barang</span></div>
+      <div class="summary-stat"><b id="statTanpaLokasi">0</b><span>Belum Ada Rak</span></div>
+    </div>
+    <p class="text-muted" style="font-size:12.5px; margin-top:12px;">Import terakhir: <span id="statLastImport">memuat…</span></p>
+  </div>
+
+  <div class="card" style="margin-top:16px; border-color:#F1C9C2;">
+    <span class="section-label" style="color:var(--danger);">Zona berbahaya</span>
+    <h3 style="font-size:15px; margin-bottom:6px;">Hapus Semua Data</h3>
+    <p class="text-muted" style="font-size:13px; line-height:1.6;">
+      Menghapus SEMUA data barang, stok, dan lokasi rak dari perangkat ini secara permanen. Tidak bisa dibatalkan. Cocok dipakai kalau import sebelumnya kacau dan mau mulai bersih dari nol.
+    </p>
+    <div class="field" style="margin-top:14px;">
+      <label>Ketik <span class="mono">HAPUS</span> untuk konfirmasi</label>
+      <input type="text" id="confirmText" class="mono" placeholder="HAPUS" autocomplete="off">
+    </div>
+    <button class="btn btn--block btn--lg" id="deleteAllBtn" disabled style="background:var(--danger); color:#fff;">Hapus Semua Data</button>
+  </div>
+</main>
+
+<script src="js/db.js"></script>
+<script src="js/app.js"></script>
+<script src="js/settings.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js'));
+  }
+</script>
+</body>
+</html>
