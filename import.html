@@ -62,22 +62,26 @@
       Part Number · Name Part · Satuan · Storage Location · Qty
     </p>
     <p class="text-muted" style="font-size:12px; line-height:1.5; margin-top:8px;">
-      Satu part number boleh muncul di beberapa baris (beda storage location) — otomatis digabung jadi 1 barang dengan breakdown qty per lokasi.
+      Satu part number boleh muncul di beberapa baris (beda storage location) — otomatis digabung jadi 1 barang dengan breakdown qty per lokasi. Barang dengan qty 0 di semua lokasi otomatis dilewati.
     </p>
   </div>
 
   <div id="previewArea" style="display:none; margin-top:16px;">
     <div class="card">
       <span class="section-label">Ringkasan perubahan</span>
-      <div class="summary-grid">
+      <div class="summary-grid" style="grid-template-columns: repeat(4, 1fr);">
         <div class="summary-stat"><b id="statNew">0</b><span>Baru</span></div>
-        <div class="summary-stat"><b id="statUpdated">0</b><span>Diupdate</span></div>
-        <div class="summary-stat"><b id="statTotal">0</b><span>Total baris</span></div>
+        <div class="summary-stat"><b id="statUpdated">0</b><span>Update</span></div>
+        <div class="summary-stat"><b id="statSkipped">0</b><span>Dilewati</span></div>
+        <div class="summary-stat"><b id="statTotal">0</b><span>Disimpan</span></div>
       </div>
       <p class="text-muted" style="font-size:12.5px; margin-top:12px; line-height:1.5;">
-        Lokasi rak yang sudah kamu assign <b>tidak akan berubah</b>. Qty per storage location (Lokal/Unpack/Highrack) diupdate sesuai file terbaru.
+        Lokasi rak yang sudah kamu assign <b>tidak akan berubah</b>. Qty per storage location (Lokal/Unpack/Highrack) diupdate sesuai file terbaru. Barang dengan qty 0 di semua lokasi tidak disimpan.
       </p>
     </div>
+
+    <!-- Tabel preview gaya Excel: 1 baris per part number, diisi oleh renderPreviewTable() di import.js -->
+    <div id="previewTableWrap"></div>
 
     <button class="btn btn--primary btn--block btn--lg" id="confirmImportBtn" style="margin-top:14px;">
       Konfirmasi Import
