@@ -1,4 +1,4 @@
-/* =========================================================
+//* =========================================================
    GUDANG — Scan Import (QR chunk transfer)
    Menangkap QR yang dihasilkan qr-generator.html (dibuka di PC
    yang port USB/Bluetooth-nya dikunci), format per QR:
@@ -26,7 +26,8 @@
    "Bukan QR transfer Gudang"). Makanya di sini, SEBELUM di-parse
    SheetJS, placeholder '~n~' itu diubah balik jadi '\n' asli (lihat
    finishScanImport). Placeholder harus sama persis dengan yang dipakai
-   di qr-generator.html (NEWLINE_PLACEHOLDER).
+   di qr-generator.html (NEWLINE_PLACEHOLDER). Sudah diverifikasi lewat
+   sesi debugging Juli 2026 — CSV hasil rekonstruksi rapi & lengkap.
    ========================================================= */
 const NEWLINE_PLACEHOLDER = '~n~';
 
@@ -115,51 +116,6 @@ function renderScanProgress() {
     missing.length === 0 ? 'Semua chunk lengkap ✓' : `Belum diterima, lompat ke #: ${missing.join(', ')}`;
 }
 
-/**
- * DEBUG SEMENTARA — dipakai untuk melacak bug korupsi kolom (lihat sesi
- * debugging Juli 2026: qty ngaco / lokasi rak kesisipan nama barang).
- * Menampilkan teks CSV mentah HASIL REKONSTRUKSI (sebelum diparse SheetJS)
- * di layar, supaya bisa di-screenshot & dibandingkan baris per baris dengan
- * data asli di qr-generator.html. Proses import DIJEDA sampai user tekan
- * "Lanjutkan Proses". Hapus fungsi ini + pemanggilannya di finishScanImport
- * setelah bug ketemu & sudah tidak dibutuhkan lagi.
- */
-function showRawCsvDebug(csvText) {
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed; inset:0; background:#fff; z-index:9999; padding:16px; overflow-y:auto; font-family:sans-serif;';
-
-    const title = document.createElement('h3');
-    title.textContent = 'DEBUG: CSV mentah hasil rekonstruksi';
-    title.style.cssText = 'margin:0 0 8px; font-size:16px;';
-    overlay.appendChild(title);
-
-    const hint = document.createElement('p');
-    hint.textContent = 'Screenshot / select-all + copy teks di bawah ini, lalu kirim ke Claude. Nomor baris ditambahkan cuma buat referensi (bukan bagian data asli).';
-    hint.style.cssText = 'font-size:12px; color:#555; margin:0 0 12px;';
-    overlay.appendChild(hint);
-
-    const pre = document.createElement('pre');
-    pre.style.cssText = 'white-space:pre-wrap; word-break:break-all; font-size:11px; border:1px solid #ccc; border-radius:8px; padding:10px; background:#fafafa; user-select:text;';
-    pre.textContent = csvText
-      .split('\n')
-      .map((line, i) => `${String(i + 1).padStart(3, '0')}| ${line}`)
-      .join('\n');
-    overlay.appendChild(pre);
-
-    const btn = document.createElement('button');
-    btn.textContent = 'Lanjutkan Proses Import';
-    btn.style.cssText = 'width:100%; padding:14px; margin-top:12px; border:none; border-radius:10px; background:#1B5FA8; color:#fff; font-weight:700; font-size:15px;';
-    btn.addEventListener('click', () => {
-      document.body.removeChild(overlay);
-      resolve();
-    });
-    overlay.appendChild(btn);
-
-    document.body.appendChild(overlay);
-  });
-}
-
 async function finishScanImport() {
   showToast('Semua chunk lengkap, memproses data…', 'success');
 
@@ -168,10 +124,6 @@ async function finishScanImport() {
   // Gabung chunk jadi CSV utuh, lalu kembalikan placeholder '~n~' jadi '\n'
   // asli — lihat catatan fix newline placeholder di header file ini.
   const csvText = orderedChunks.join('\n').split(NEWLINE_PLACEHOLDER).join('\n');
-
-  // DEBUG SEMENTARA — lihat komentar di showRawCsvDebug(). Hapus baris ini
-  // (dan fungsi showRawCsvDebug di atas) setelah bug korupsi kolom ketemu.
-  await showRawCsvDebug(csvText);
 
   try {
     const workbook = XLSX.read(csvText, { type: 'string' });
