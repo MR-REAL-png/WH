@@ -5,13 +5,20 @@
    -> satu part number bisa muncul di beberapa baris (beda storage location),
       jadi baris-baris itu di-GROUP dulu per part number sebelum di-merge.
 
-   CATATAN SKEMA lokasi_rak (Juli 2026): dulu 1 string per barang, sekarang
-   per storage location (lihat db.js). Kolom "lokasi rak" di Excel (kalau
-   ada) sekarang diarahkan ke storage location BARIS ITU SENDIRI, bukan jadi
-   1 nilai global buat semua lokasi — pas banget karena 1 baris Excel = 1
-   storage location.
+   CATATAN SKEMA lokasi_rak (Juli 2026): per storage location (lihat db.js).
+   Kolom "lokasi rak" di Excel (kalau ada) diarahkan ke storage location
+   BARIS ITU SENDIRI, bukan jadi 1 nilai global buat semua lokasi.
+
+   CATATAN FITUR (Juli 2026):
+   - Barang yang total qty-nya 0 di SEMUA storage location (Lokal+Unpack+
+     Highrack) dianggap tidak relevan — DILEWATI TOTAL, tidak disimpan ke
+     database sama sekali (tidak nambah baru, tidak update yang sudah ada).
+   - Preview sebelum konfirmasi sekarang ditampilkan sebagai tabel gaya
+     Excel (kolom + header), bukan cuma ringkasan angka, biar bisa dicek
+     baris per baris sebelum disimpan. Dipakai sama-sama oleh mode file
+     dan mode scan QR (keduanya lewat buildPreview).
    ========================================================= */
-let pendingGroups = []; // hasil grouping+merge, siap disimpan
+let pendingGroups = []; // hasil grouping+merge (SUDAH dikurangi yg qty 0 semua lokasi), siap disimpan
 
 const COLUMN_ALIASES = {
   part_number: ['part number', 'part_number', 'sku', 'kode', 'material', 'no material'],
@@ -192,20 +199,78 @@ async function handleFile(file) {
   }
 }
 
+/**
+ * groupedRows -> filter buang yang qty-nya 0 di SEMUA storage location
+ * (dianggap tidak relevan, tidak disimpan sama sekali) -> merge dengan
+ * data existing -> render tabel preview gaya Excel + ringkasan angka.
+ */
 async function buildPreview(groupedRows) {
+  const relevantRows = groupedRows.filter((g) => GudangDB.totalStok(g.stok) > 0);
+  const skippedCount = groupedRows.length - relevantRows.length;
+
   const existingAll = await GudangDB.getAllBarang();
   const existingBySku = Object.fromEntries(existingAll.map((b) => [b.sku, b]));
 
-  pendingGroups = groupedRows.map((g) => GudangDB.mergeFromImport(existingBySku[g.sku], g));
+  pendingGroups = relevantRows.map((g) => GudangDB.mergeFromImport(existingBySku[g.sku], g));
 
   const newCount = pendingGroups.filter((r) => r.is_new).length;
   const updatedCount = pendingGroups.length - newCount;
 
   document.getElementById('statNew').textContent = newCount;
   document.getElementById('statUpdated').textContent = updatedCount;
+  document.getElementById('statSkipped').textContent = skippedCount;
   document.getElementById('statTotal').textContent = pendingGroups.length;
+
+  document.getElementById('previewTableWrap').innerHTML = renderPreviewTable(pendingGroups);
+
   document.getElementById('previewArea').style.display = 'block';
   document.getElementById('previewArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  if (skippedCount > 0) {
+    showToast(`${skippedCount} part dilewati (qty 0 di semua lokasi)`, 'default');
+  }
+}
+
+/** Tabel preview gaya Excel: 1 baris per part number, kolom = header sheet asli + breakdown lokasi */
+function renderPreviewTable(rows) {
+  if (rows.length === 0) {
+    return `<p class="text-muted" style="font-size:13px; padding:14px 4px;">Tidak ada barang yang perlu disimpan.</p>`;
+  }
+  const bodyRows = rows
+    .map((r) => {
+      const total = GudangDB.totalStok(r.stok);
+      return `
+      <tr>
+        <td class="mono">${escapeHtml(r.part_number || r.sku)}</td>
+        <td>${escapeHtml(r.nama_barang)}</td>
+        <td>${escapeHtml(r.satuan || '-')}</td>
+        <td class="mono">${(r.stok['1101'] || 0).toLocaleString('id-ID')}</td>
+        <td class="mono">${(r.stok['1102'] || 0).toLocaleString('id-ID')}</td>
+        <td class="mono">${(r.stok['1401'] || 0).toLocaleString('id-ID')}</td>
+        <td class="mono"><b>${total.toLocaleString('id-ID')}</b></td>
+        <td>${r.is_new ? '<span class="badge badge--loc-1102">Baru</span>' : '<span class="badge badge--loc-1401">Update</span>'}</td>
+      </tr>`;
+    })
+    .join('');
+
+  return `
+    <div class="table-scroll">
+      <table class="preview-table">
+        <thead>
+          <tr>
+            <th>Part Number</th>
+            <th>Nama Barang</th>
+            <th>Satuan</th>
+            <th>Lokal</th>
+            <th>Unpack</th>
+            <th>Highrack</th>
+            <th>Total</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>`;
 }
 
 async function confirmImport() {
@@ -229,6 +294,7 @@ async function confirmImport() {
 function resetPreview() {
   pendingGroups = [];
   document.getElementById('previewArea').style.display = 'none';
+  document.getElementById('previewTableWrap').innerHTML = '';
 }
 
 initImportPage();
